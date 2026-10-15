@@ -134,6 +134,9 @@ dialog input{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
 .results .hint{font-size:13px;color:var(--muted);padding:10px 4px}
 
 .leaflet-container{font-family:var(--font-ui);background:var(--line)}
+/* 深色模式：把一般地圖反相成深色，不需要其他地圖服務 */
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}}
+:root[data-theme="dark"] .leaflet-tile-pane{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.9)}
 .pin{border-radius:8px;color:#fff;font:700 15px/22px var(--font-num);text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);min-width:30px;padding:0 4px;white-space:nowrap}
 .me{width:18px;height:18px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-shadow:0 0 0 6px rgba(26,115,232,.25)}
 .flag{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--sign);border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
@@ -258,7 +261,7 @@ dialog input{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
         <button class="btn" type="button" id="btnDemo">切換到示範資料</button>
         <button class="btn" type="button" id="btnClear">清除金鑰與快取</button>
       </div>
-      <p class="ver">版本 6.1・2026/10/15</p>
+      <p class="ver">版本 6.2・2026/10/15</p>
     </section>
   </form>
 </dialog>
@@ -293,6 +296,41 @@ const mins = ms => Math.max(0, Math.round(ms / 60000));
 const ago = t => { if (!t) return ""; const m = mins(Date.now() - t); return m < 1 ? "剛剛更新" : m < 60 ? `${m} 分鐘前更新` : `${Math.round(m/60)} 小時前更新`; };
 function fmtDuration(ms){ const m = mins(ms); return m < 60 ? `${m} 分鐘` : `${Math.floor(m/60)} 小時 ${m%60} 分`; }
 function fmtClock(t){ const d = new Date(t); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
+// 解析 WKT 線段：MULTILINESTRING 會拆成多段，每段是 [緯度, 經度] 的陣列
+function parseParts(o){
+  const wkt = o?.Geometry || o?.ParkingSegmentGeometry || o?.GeometryWKT;
+  if (typeof wkt !== "string") return null;
+  const parts = wkt.split(/\)\s*,\s*\(/).map(chunk => {
+    const nums = chunk.match(/-?\d+(?:\.\d+)?/g)?.map(Number) || [];
+    const pts = [];
+    for (let i = 0; i + 1 < nums.length; i += 2){
+      const lon = nums[i], lat = nums[i+1];
+      if (lat > 20 && lat < 27 && lon > 118 && lon < 123) pts.push([+lat.toFixed(5), +lon.toFixed(5)]);
+    }
+    return pts;
+  }).filter(p => p.length);
+  return parts.length ? parts : null;
+}
+// 路段上離 ref 最近的點（含線段中間的點，不只轉角）
+function nearestOn(parts, ref){
+  let best = null, bd = Infinity;
+  const consider = p => { const d = haversine(ref, p); if (d < bd){ bd = d; best = p; } };
+  for (const pts of parts){
+    if (pts.length === 1){ consider(pts[0]); continue; }
+    for (let i = 0; i + 1 < pts.length; i++){
+      const [a, b] = [pts[i], pts[i+1]];
+      // 在經緯度平面上投影（距離很短，誤差可忽略）
+      const k = Math.cos(ref[0] * Math.PI / 180);
+      const ax = a[1]*k, ay = a[0], bx = b[1]*k, by = b[0], px = ref[1]*k, py = ref[0];
+      const dx = bx-ax, dy = by-ay, L2 = dx*dx + dy*dy;
+      const t = L2 ? Math.max(0, Math.min(1, ((px-ax)*dx + (py-ay)*dy) / L2)) : 0;
+      consider([ay + t*dy, (ax + t*dx) / k]);
+    }
+  }
+  return best;
+}
+// 某個車位相對 ref 的實際位置：路邊用路段上最近的點，停車場用原本的座標
+const spotFor = (it, ref) => it.parts ? (nearestOn(it.parts, ref) || it.pos) : it.pos;
 function getPos(o){
   for (const k of ["CarParkPosition","ParkingSegmentPosition","Position","ParkingSpotPosition"]){
     const p = o?.[k]; if (p?.PositionLat && p?.PositionLon) return [+p.PositionLat, +p.PositionLon];
@@ -344,17 +382,18 @@ async function tdx(path, fmt = "%24format=JSON"){
 }
 // 停車場、路段基本資料一天抓一次就好
 async function getStatic(kind, path){
-  const key = `static_${kind}_v3`, today = new Date().toDateString();
+  const key = `static_${kind}_v4`, today = new Date().toDateString();
   const c = store.get(key);
   if (c && c.day === today) return c.items;
   const rows = firstArray(await tdx(path));
   if (kind === "onstreet") store.set("debug_seg", rows.slice(0, 2));
   const items = rows.map(o => {
+    const parts = kind === "onstreet" ? parseParts(o) : null;
     const pos = getPos(o);
     return pos && {
       id: o.CarParkID || o.ParkingSegmentID,
       name: zh(o.CarParkName) || zh(o.ParkingSegmentName),
-      pos, addr: zh(o.Address),
+      pos, parts, addr: zh(o.Address),
       fare: zh(o.FareDescription) || "",
       rateIds: collectRateIds(o),
     };
@@ -514,22 +553,12 @@ if (!state.demo){ // 先顯示上次的資料，等新資料回來再換掉
 
 // ---------- 地圖 ----------
 const map = L.map("map", {zoomControl:false, attributionControl:true}).setView(KAOHSIUNG, 15);
-const darkQuery = matchMedia("(prefers-color-scheme: dark)");
-let tiles = null, tilesFallback = false;
+let tiles = null;
 function setTiles(){
-  const dark = !tilesFallback && (document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && darkQuery.matches));
-  if (tiles) tiles.remove();
-  tiles = dark
-    ? L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {maxZoom:19, subdomains:"abcd", attribution:"© OpenStreetMap © CARTO"})
-    : L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap"});
-  let errs = 0;
-  tiles.on("tileerror", () => { // 深色底圖載不出來就改用一般地圖
-    if (dark && ++errs >= 3 && !tilesFallback){ tilesFallback = true; setTiles(); }
-  });
-  tiles.addTo(map);
+  if (tiles) return;
+  tiles = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap"}).addTo(map);
 }
 setTiles();
-darkQuery.addEventListener?.("change", setTiles);
 const layer = L.layerGroup().addTo(map);
 let meMarker = null, circle = null, flag = null, carMarker = null, programmatic = false;
 map.on("moveend", () => {
@@ -610,7 +639,7 @@ function visibleItems(){
   return (state.data?.items || [])
     .filter(it => state.kind === "all" || it.kind === state.kind)
     .filter(it => !state.onlyAvail || it.avail > 0)
-    .map(it => ({...it, d: haversine(o, it.pos)}))
+    .map(it => { const spot = spotFor(it, o); return {...it, spot, d: haversine(o, spot)}; })
     .filter(it => it.d <= state.radius)
     .sort((a,b) => state.sort === "avail"
       ? ((b.avail ?? -1) - (a.avail ?? -1)) || a.d - b.d
@@ -646,7 +675,7 @@ function render(){
   layer.clearLayers();
   for (const it of items){
     const label = it.avail == null ? "P" : it.avail;
-    L.marker(it.pos, {icon:L.divIcon({className:"", html:`<div class="pin ${cls(it)}">${label}</div>`, iconSize:null, iconAnchor:[17,12]})})
+    L.marker(it.spot || it.pos, {icon:L.divIcon({className:"", html:`<div class="pin ${cls(it)}">${label}</div>`, iconSize:null, iconAnchor:[17,12]})})
       .on("click", () => select(it.id, true)).addTo(layer);
   }
 
@@ -679,7 +708,7 @@ function lotCard(it, compact){
       <div class="meta">${it.d!=null?`<span class="dist">${fmtDist(it.d)}</span>`:""}<span class="tag">${esc(it.kind)}</span>${it.t?`<span>${ago(it.t)}</span>`:""}${!compact&&it.addr?`<span>${esc(it.addr)}</span>`:""}</div>
       ${it.rate?`<div class="rate">${esc(it.rate)}</div>`:""}
       ${!compact&&it.fare?`<div class="fare">${esc(it.fare)}</div>`:""}
-      <div class="nav"><a class="go" data-go href="${navUrl(it.pos)}" target="_blank" rel="noopener">導航</a></div>
+      <div class="nav"><a class="go" data-go href="${navUrl(it.spot || it.pos)}" target="_blank" rel="noopener">導航</a></div>
     </div></article>`;
 }
 
@@ -704,20 +733,20 @@ function activeTarget(){
   if (!t || Date.now() - t.at > TARGET_TTL){ if (t) store.del("target"); return null; }
   return t;
 }
-function setTarget(it){ store.set("target", {id: it.id, name: it.name, pos: it.pos, kind: it.kind, at: Date.now()}); }
+function setTarget(it){ store.set("target", {id: it.id, name: it.name, pos: it.spot || it.pos, kind: it.kind, at: Date.now()}); }
 function renderTarget(){
   const box = $("#target"), t = activeTarget();
   if (!t || !state.data){ box.innerHTML = ""; return; }
   const all = state.data.items;
   const here = state.me || origin();
   const cur = all.find(x => x.id === t.id) || {...t, avail:null, total:null};
-  const it = {...cur, d: haversine(here, cur.pos)};
+  const it = {...cur, spot: t.pos, d: haversine(here, t.pos)};
   const full = it.avail === 0, low = it.avail != null && it.avail <= 3;
   let alts = "";
   if (full || low || it.avail == null){
     const near = all
       .filter(x => x.id !== t.id && x.avail > 0)
-      .map(x => ({...x, dt: haversine(t.pos, x.pos), d: haversine(here, x.pos)}))
+      .map(x => { const spot = spotFor(x, t.pos); return {...x, spot, dt: haversine(t.pos, spot), d: haversine(here, spot)}; })
       .filter(x => x.dt <= 600)
       .sort((a, b) => a.dt - b.dt).slice(0, 2);
     if (near.length) alts = `<div class="alts"><h4>${full ? "附近還有空位的地方" : "附近的備案"}</h4>${near.map(x => lotCard(x, true)).join("")}</div>`;
@@ -779,6 +808,11 @@ function openCar(){
   $("#dlgCar").showModal();
 }
 
+let segLine = null;
+function highlight(it){
+  if (segLine){ segLine.remove(); segLine = null; }
+  if (it?.parts) segLine = L.polyline(it.parts, {color:"#ff6a00", weight:7, opacity:.85}).addTo(map);
+}
 function select(id, scroll){
   state.selected = id;
   document.querySelectorAll(".lot").forEach(el => el.classList.toggle("sel", el.dataset.id === id));
@@ -863,7 +897,8 @@ function onCardsClick(e){
   if (e.target.closest("#btnParkHere")){
     const t = activeTarget(); const it = state.data?.items.find(x => x.id === t?.id) || t;
     // 有定位而且離目標不遠，就用目前位置（路邊格的點是路段中間，用實際位置比較準）
-    const pos = state.me && haversine(state.me, it.pos) < 300 ? state.me : it.pos;
+    const spot = t.pos || it.pos;
+    const pos = state.me && haversine(state.me, spot) < 300 ? state.me : spot;
     parkAt(pos, it); return;
   }
   if (e.target.closest("[data-unpark]")){ store.del("parked"); render(); return; }
@@ -871,7 +906,7 @@ function onCardsClick(e){
   const f = e.target.closest(".fare"); if (f){ f.classList.toggle("open"); return; }
   const card = e.target.closest(".lot"); if (!card) return;
   const it = state.data?.items.find(x => x.id === card.dataset.id);
-  if (it){ select(it.id); moveTo(it.pos, 17); }
+  if (it){ select(it.id); highlight(it); moveTo(spotFor(it, origin()), 17); }
 }
 $("main").addEventListener("click", onCardsClick);
 document.querySelectorAll("[data-r]").forEach(b => b.onclick = () => { state.radius = +b.dataset.r; store.set("radius", state.radius); render(); });
