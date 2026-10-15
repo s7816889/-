@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="找車位">
+<meta name="theme-color" content="#0b4fa8">
+<title>高雄找車位</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+/* 版面：上半地圖、下半清單；像路邊的藍底白字 P 標誌，數字用窄體大字，開車時一眼看得到 */
+:root{
+  --bg:#eef2f7; --surface:#ffffff; --fg:#14202e; --muted:#5b6b7d; --line:#d6dee8;
+  --sign:#0b4fa8; --sign-fg:#ffffff;
+  --ok:#14864a; --warn:#c27a00; --full:#c62828; --none:#8a97a6;
+  --font-ui:"Noto Sans TC",-apple-system,"PingFang TC","Heiti TC",sans-serif;
+  --font-num:"Barlow Condensed","Arial Narrow",-apple-system,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0c1219; --surface:#151e29; --fg:#e7edf4; --muted:#93a3b5; --line:#263345;
+  --sign:#2f7ae0; --sign-fg:#ffffff; --ok:#3cc47c; --warn:#f0a92b; --full:#ff6b6b; --none:#6d7b8b; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0c1219; --surface:#151e29; --fg:#e7edf4; --muted:#93a3b5; --line:#263345;
+  --sign:#2f7ae0; --sign-fg:#ffffff; --ok:#3cc47c; --warn:#f0a92b; --full:#ff6b6b; --none:#6d7b8b; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--font-ui);display:flex;flex-direction:column;-webkit-tap-highlight-color:transparent}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--sign);outline-offset:2px}
+
+header{background:var(--sign);color:var(--sign-fg);padding-top:env(safe-area-inset-top,0px);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.bar{display:flex;align-items:center;gap:12px;padding-block:10px}
+.plogo{flex:none;width:34px;height:34px;border:2.5px solid currentColor;border-radius:7px;display:grid;place-items:center;font:700 24px/1 var(--font-num)}
+.bar h1{font-size:17px;margin:0;font-weight:700;flex:1;min-width:0}
+.bar small{display:block;font-size:12px;font-weight:400;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.iconbtn{background:rgba(255,255,255,.16);border:0;border-radius:10px;width:40px;height:40px;display:grid;place-items:center}
+.iconbtn svg{width:22px;height:22px}
+
+#map{flex:0 0 30%;min-height:170px;background:var(--line);position:relative;transition:flex-basis .25s ease}
+body.bigmap #map{flex-basis:68%}
+.rate{font-size:13.5px;font-weight:500;margin-top:4px}
+#debugOut{white-space:pre-wrap;word-break:break-all;font:11px/1.4 ui-monospace,Menlo,monospace;background:var(--bg);border-radius:8px;padding:8px;max-height:40vh;overflow:auto;margin-top:10px}
+.maptools{position:absolute;z-index:500;right:max(10px,env(safe-area-inset-right,0px));bottom:10px;display:flex;flex-direction:column;gap:8px}
+.maptools button{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;font-weight:500;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+
+.controls{display:flex;gap:8px;align-items:center;padding-block:10px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  border-bottom:1px solid var(--line);background:var(--surface);flex-wrap:wrap}
+.seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{background:transparent;border:0;padding:6px 11px;font-size:13px}
+.seg button[aria-pressed="true"]{background:var(--sign);color:var(--sign-fg)}
+.controls .status{font-size:12px;color:var(--muted);margin-left:auto}
+
+main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  padding-block:12px calc(16px + env(safe-area-inset-bottom,0px))}
+.notice{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:14px}
+.notice b{color:var(--sign)}
+.notice.demo{border-color:var(--warn)}
+.notice.err{border-color:var(--full)}
+.list{display:flex;flex-direction:column;gap:10px}
+.lot{display:grid;grid-template-columns:72px 1fr;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+.lot.sel{border-color:var(--sign);box-shadow:0 0 0 1px var(--sign)}
+.count{border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;padding:6px 2px;min-height:64px}
+.count .n{font:700 32px/1 var(--font-num);font-variant-numeric:tabular-nums}
+.count .t{font-size:11px;opacity:.9;margin-top:2px}
+.ok{background:var(--ok)} .warn{background:var(--warn)} .full{background:var(--full)} .none{background:var(--none)}
+.info{min-width:0}
+.info h3{margin:0;font-size:15px;line-height:1.35}
+.meta{font-size:13px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;margin-top:2px}
+.meta .dist{font:600 15px/1.35 var(--font-num);color:var(--fg);font-variant-numeric:tabular-nums}
+.tag{font-size:11px;border:1px solid var(--line);border-radius:5px;padding:0 5px}
+.fare{font-size:12.5px;color:var(--muted);margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
+.fare.open{-webkit-line-clamp:unset}
+.nav{display:flex;gap:8px;margin-top:8px}
+.nav a{flex:1;text-align:center;text-decoration:none;color:var(--sign);border:1px solid var(--sign);border-radius:8px;padding:6px 0;font-size:13px;font-weight:500}
+.nav a:first-child{background:var(--sign);color:var(--sign-fg)}
+.empty{text-align:center;color:var(--muted);padding:24px 8px}
+
+dialog{border:0;border-radius:16px;background:var(--surface);color:var(--fg);width:min(440px,calc(100% - 32px));padding:20px}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+dialog h2{margin:0 0 6px;font-size:18px}
+dialog p{margin:0 0 12px;font-size:13.5px;color:var(--muted)}
+dialog label{display:block;font-size:13px;font-weight:500;margin:10px 0 4px}
+dialog input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--fg);font:16px var(--font-ui)}
+.row{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
+.btn{flex:1;border:0;border-radius:10px;padding:11px;font-weight:500;background:var(--line)}
+.btn.primary{background:var(--sign);color:var(--sign-fg)}
+.leaflet-container{font-family:var(--font-ui)}
+.pin{border-radius:8px;color:#fff;font:700 15px/22px var(--font-num);text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);min-width:30px;padding:0 4px;white-space:nowrap}
+.me{width:18px;height:18px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-shadow:0 0 0 6px rgba(26,115,232,.25)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="plogo" aria-hidden="true">P</div>
+    <h1>高雄找車位<small id="where">定位中…</small></h1>
+    <button class="iconbtn" id="btnRefresh" aria-label="重新整理">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+    </button>
+    <button class="iconbtn" id="btnSettings" aria-label="設定">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div id="map">
+  <div class="maptools">
+    <button id="btnSize">放大地圖</button>
+    <button id="btnHere">回到我的位置</button>
+    <button id="btnCenter" hidden>搜尋地圖中心</button>
+  </div>
+</div>
+
+<div class="controls">
+  <div class="seg" role="group" aria-label="搜尋範圍">
+    <button data-r="500">500m</button><button data-r="1000">1km</button><button data-r="2000">2km</button>
+  </div>
+  <div class="seg" role="group" aria-label="排序">
+    <button data-s="dist">最近</button><button data-s="avail">最多空位</button>
+  </div>
+  <span class="status" id="status"></span>
+</div>
+
+<main>
+  <div id="notices"></div>
+  <div class="list" id="list"></div>
+</main>
+
+<dialog id="dlg">
+  <form id="frm" method="dialog">
+    <h2>TDX 金鑰設定</h2>
+    <p>到 TDX 會員中心的「資料服務 → API 金鑰」複製 Client ID 和 Client Secret 貼在這裡。金鑰只存在這支手機的瀏覽器裡，不會上傳到其他地方。</p>
+    <label for="cid">Client ID</label>
+    <input id="cid" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <label for="csec">Client Secret</label>
+    <input id="csec" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <div class="row">
+      <button class="btn" type="button" id="btnDemo">先用示範資料</button>
+      <button class="btn primary" type="submit" id="btnSave">儲存並查詢</button>
+    </div>
+    <div class="row"><button class="btn" type="button" id="btnClear">清除金鑰與快取</button><button class="btn" type="button" id="btnDebug">資料檢查</button></div>
+    <pre id="debugOut" hidden></pre>
+  </form>
+</dialog>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(() => {
+const TDX = "https://tdx.transportdata.tw";
+const CITY = "Kaohsiung";
+const KAOHSIUNG = [22.6273, 120.3014]; // 預設：高雄市中心
+const REFRESH_MS = 60_000;
+
+// ---------- 小工具 ----------
+const $ = s => document.querySelector(s);
+const store = {
+  get(k, d=null){ try{ const v = localStorage.getItem(k); return v==null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} },
+  del(k){ try{ localStorage.removeItem(k); }catch{} }
+};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function haversine(a, b){
+  const R=6371000, r=Math.PI/180;
+  const dLat=(b[0]-a[0])*r, dLon=(b[1]-a[1])*r;
+  const h=Math.sin(dLat/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+const fmtDist = m => m < 1000 ? `${Math.round(m/10)*10} m` : `${(m/1000).toFixed(1)} km`;
+const firstArray = o => Array.isArray(o) ? o : (o && Object.values(o).find(Array.isArray)) || [];
+const zh = v => typeof v === "string" ? v : (v?.Zh_tw || v?.En || "");
+function getPos(o){
+  for (const k of ["CarParkPosition","ParkingSegmentPosition","Position","ParkingSpotPosition"]){
+    const p = o?.[k]; if (p?.PositionLat && p?.PositionLon) return [+p.PositionLat, +p.PositionLon];
+  }
+  if (o?.PositionLat && o?.PositionLon) return [+o.PositionLat, +o.PositionLon];
+  const wkt = o?.Geometry || o?.ParkingSegmentGeometry || o?.GeometryWKT;
+  if (typeof wkt === "string"){ // WKT 是「經度 緯度」，取所有點的平均當位置
+    const nums = wkt.match(/-?\d+\.\d+/g)?.map(Number) || [];
+    if (nums.length >= 2){
+      let lon=0, lat=0, n=0;
+      for (let i=0;i+1<nums.length;i+=2){ lon+=nums[i]; lat+=nums[i+1]; n++; }
+      return [lat/n, lon/n];
+    }
+  }
+  return null;
+}
+
+// ---------- TDX ----------
+async function getToken(){
+  const t = store.get("tdx_token");
+  if (t && t.exp > Date.now() + 60_000) return t.access;
+  const keys = store.get("tdx_keys");
+  if (!keys?.id || !keys?.secret) throw new Error("NOKEY");
+  const res = await fetch(`${TDX}/auth/realms/TDXConnect/protocol/openid-connect/token`, {
+    method:"POST",
+    headers:{"Content-Type":"application/x-www-form-urlencoded"},
+    body: new URLSearchParams({grant_type:"client_credentials", client_id:keys.id, client_secret:keys.secret})
+  });
+  if (!res.ok) throw new Error(res.status === 401 || res.status === 400 ? "BADKEY" : `TOKEN ${res.status}`);
+  const j = await res.json();
+  store.set("tdx_token", {access:j.access_token, exp: Date.now() + (j.expires_in||3600)*1000});
+  return j.access_token;
+}
+async function tdx(path){
+  const token = await getToken();
+  const res = await fetch(`${TDX}${path}${path.includes("?")?"&":"?"}%24format=JSON`, {headers:{Authorization:`Bearer ${token}`}});
+  if (res.status === 401){ store.del("tdx_token"); throw new Error("BADKEY"); }
+  if (res.status === 429) throw new Error("RATE");
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+// 停車場基本資料一天抓一次就好
+async function getStatic(kind, path){
+  const key = `static_${kind}`, today = new Date().toDateString();
+  const c = store.get(key);
+  if (c && c.day === today) return c.items;
+  const items = firstArray(await tdx(path)).map(o => {
+    const pos = getPos(o);
+    return pos && {
+      id: o.CarParkID || o.ParkingSegmentID,
+      name: zh(o.CarParkName) || zh(o.ParkingSegmentName),
+      pos, addr: zh(o.Address),
+      fare: zh(o.FareDescription) || "",
+    };
+  }).filter(Boolean);
+  store.set(key, {day: today, items});
+  return items;
+}
+
+async function loadReal(){
+  const out = [], notes = [];
+  // 1) 路外停車場
+  const [lots, avail] = await Promise.all([
+    getStatic("offstreet", `/api/basic/v1/Parking/OffStreet/CarPark/City/${CITY}`),
+    tdx(`/api/basic/v1/Parking/OffStreet/ParkingAvailability/City/${CITY}`)
+  ]);
+  const amap = new Map(firstArray(avail).map(a => [a.CarParkID, a]));
+  let newest = 0;
+  for (const l of lots){
+    const a = amap.get(l.id);
+    const r = a ? readAvail(a) : {avail:null, total:null, t:null};
+    if (r.t) newest = Math.max(newest, r.t);
+    out.push({...l, kind:"停車場", ...r});
+  }
+  // 2) 路邊停車
+  try{
+    const [segs, savail, rates] = await Promise.all([
+      getStatic("onstreet", `/api/basic/v1/Parking/OnStreet/ParkingSegment/City/${CITY}`),
+      tdx(`/api/basic/v1/Parking/OnStreet/ParkingSegmentAvailability/City/${CITY}`),
+      getRates()
+    ]);
+    const smap = new Map(firstArray(savail).map(a => [a.ParkingSegmentID, a]));
+    for (const s of segs){
+      const a = smap.get(s.id);
+      const r = a ? readAvail(a) : {avail:null, total:null, t:null};
+      if (r.t) newest = Math.max(newest, r.t);
+      const rate = rates.get(s.id);
+      out.push({...s, kind:"路邊", ...r, rate: rate || "", fare: s.fare});
+    }
+    if (!segs.length) notes.push("TDX 目前沒有高雄的路邊停車格資料，清單只顯示停車場。");
+  }catch(e){
+    if (e.message === "BADKEY" || e.message === "NOKEY") throw e;
+    notes.push("高雄的路邊停車格即時資料目前抓不到，清單只顯示停車場。");
+  }
+  return {items: out, notes, time: newest || Date.now()};
+}
+// 優先取「自小客車位」的剩餘數
+function readAvail(a){
+  const list = a.Availabilities || [];
+  const car = list.find(x => x.SpaceType === 1) ;
+  const src = car || a;
+  const total = src.NumberOfSpaces ?? src.TotalSpaces ?? a.TotalSpaces;
+  let avail = src.AvailableSpaces ?? a.AvailableSpaces;
+  if (avail == null || avail < 0) avail = null;
+  const t = Date.parse(a.DataCollectTime || a.SrcUpdateTime || a.UpdateTime || "") || null;
+  return {avail, total: total > 0 ? total : null, t};
+}
+
+// ---------- 路邊費率 ----------
+// 一天抓一次；TDX 費率欄位格式不確定，所以用欄位名稱自動辨識
+async function getRates(){
+  const key = "static_rates", today = new Date().toDateString();
+  const c = store.get(key);
+  if (c && c.day === today) return new Map(c.items);
+  let rows = [];
+  try{ rows = firstArray(await tdx(`/api/basic/v1/Parking/OnStreet/ParkingSegmentRate/City/${CITY}`)); }
+  catch(e){ if (e.message === "BADKEY" || e.message === "NOKEY") throw e; store.set("debug_rate", {error: e.message}); return new Map(); }
+  store.set("debug_rate", {count: rows.length, sample: rows.slice(0, 2)});
+  const items = [];
+  for (const r of rows){
+    const id = r.ParkingSegmentID; if (!id) continue;
+    const text = formatRate(r);
+    if (text) items.push([id, text]);
+  }
+  store.set(key, {day: today, items});
+  return new Map(items);
+}
+function formatRate(rec){
+  const found = [];
+  const PRICE = /(price|fee|fare|amount|rate)$/i, TEXT = /description$/i;
+  const walk = (o, inherited) => {
+    if (Array.isArray(o)){ o.forEach(x => walk(x, inherited)); return; }
+    if (!o || typeof o !== "object") return;
+    const ctx = {...inherited};
+    if (o.SpaceType != null) ctx.space = o.SpaceType;
+    if (o.StartTime && o.EndTime) ctx.time = `${String(o.StartTime).slice(0,5)}–${String(o.EndTime).slice(0,5)}`;
+    for (const [k, v] of Object.entries(o)){
+      if (/minute/i.test(k) && typeof v === "number" && v > 0) ctx.unit = v % 60 === 0 ? (v === 60 ? "每小時" : `每 ${v/60} 小時`) : `每 ${v} 分鐘`;
+      else if (/unit|period/i.test(k) && typeof v === "string" && v.trim()) ctx.unit = v.trim();
+    }
+    let price = null;
+    for (const [k, v] of Object.entries(o)){
+      if (PRICE.test(k) && !/id$/i.test(k) && typeof v === "number" && v >= 0) { price = v; break; }
+    }
+    if (price != null && (ctx.space == null || ctx.space === 1 || ctx.space === 0)) found.push({...ctx, price});
+    for (const [k, v] of Object.entries(o)){
+      if (TEXT.test(k)){ const s = zh(v); if (s) found.push({text: s}); }
+      else if (v && typeof v === "object") walk(v, ctx);
+    }
+  };
+  walk(rec, {});
+  const parts = [...new Set(found.map(f => f.text || `${f.price} 元${f.unit ? " / " + f.unit : ""}${f.time ? "（" + f.time + "）" : ""}`))];
+  return parts.slice(0, 3).join("；");
+}
+const ago = t => { if (!t) return ""; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "剛剛更新" : m < 60 ? `${m} 分鐘前更新` : `${Math.round(m/60)} 小時前更新`; };
+
+// ---------- 示範資料（非真實） ----------
+function demoData(c){
+  const names = ["示範｜中央公園地下停車場","示範｜文化中心平面停車場","示範｜捷運站轉乘停車場","示範｜商圈立體停車場","示範｜五福路路邊停車格","示範｜市場平面停車場","示範｜醫院附設停車場","示範｜公園路路邊停車格"];
+  const off = [[.002,.001],[-.003,.004],[.006,-.002],[-.001,-.006],[.004,.005],[-.007,.002],[.009,.007],[-.005,-.009]];
+  const av = [42,5,0,118,3,null,27,0], tot=[300,80,150,420,12,60,200,8];
+  return {items: names.map((n,i)=>({id:"d"+i,name:n,pos:[c[0]+off[i][0],c[1]+off[i][1]],addr:"示範地址",
+    fare:n.includes("路邊")?"示範：每6小時加簽一次":"示範：小型車每小時 30 元，當日最高 200 元。",
+    rate:n.includes("路邊")?"示範：20 元 / 每小時（08:00–18:00）":"",
+    kind:n.includes("路邊")?"路邊":"停車場",avail:av[i],total:tot[i],t:Date.now()-i*90000})),
+    notes:[], time: Date.now()};
+}
+
+// ---------- 狀態 ----------
+const state = {
+  me: null, center: null, radius: store.get("radius", 1000), sort: store.get("sort", "dist"),
+  data: null, selected: null, demo: !store.get("tdx_keys"), busy:false, error:null
+};
+
+// ---------- 地圖 ----------
+const map = L.map("map", {zoomControl:false, attributionControl:true}).setView(KAOHSIUNG, 15);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap"}).addTo(map);
+const layer = L.layerGroup().addTo(map);
+let meMarker = null, circle = null, programmatic = false;
+map.on("moveend", () => {
+  if (programmatic){ programmatic = false; return; }
+  const c = map.getCenter(), ref = state.center || state.me;
+  $("#btnCenter").hidden = !ref || haversine(ref, [c.lat, c.lng]) < 150;
+});
+function moveTo(latlng, z){ programmatic = true; map.setView(latlng, z ?? map.getZoom()); }
+
+// ---------- 定位 ----------
+function locate(){
+  if (!("geolocation" in navigator)){ setWhere("這個瀏覽器不支援定位"); useCenter(KAOHSIUNG, "高雄市中心"); return; }
+  navigator.geolocation.watchPosition(p => {
+    const first = !state.me;
+    state.me = [p.coords.latitude, p.coords.longitude];
+    if (!meMarker) meMarker = L.marker(state.me, {icon:L.divIcon({className:"",html:'<div class="me"></div>',iconSize:[18,18]}), interactive:false, zIndexOffset:1000}).addTo(map);
+    else meMarker.setLatLng(state.me);
+    if (first){ state.center = null; moveTo(state.me, 16); setWhere("以你的位置搜尋"); render(); }
+  }, err => {
+    const msg = err.code === 1 ? "沒有定位權限，改用高雄市中心（可在設定→Safari→位置 開啟）" : "暫時抓不到定位，改用高雄市中心";
+    setWhere(msg);
+    if (!state.me) useCenter(KAOHSIUNG, "高雄市中心");
+  }, {enableHighAccuracy:true, maximumAge:15000, timeout:15000});
+}
+function useCenter(c, label){ state.center = c; moveTo(c); setWhere(label); render(); }
+const setWhere = t => $("#where").textContent = t;
+const origin = () => state.center || state.me || KAOHSIUNG;
+
+// ---------- 載入 ----------
+async function refresh(){
+  if (state.busy) return;
+  state.busy = true; state.error = null; setStatus("更新中…");
+  try{
+    state.data = state.demo ? demoData(state.me || KAOHSIUNG) : await loadReal();
+  }catch(e){
+    state.error = e.message;
+  }finally{
+    state.busy = false; render();
+  }
+}
+function setStatus(t){ $("#status").textContent = t; }
+function cls(it){
+  if (it.avail == null) return "none";
+  if (it.avail === 0) return "full";
+  if (it.avail <= 10 || (it.total && it.avail / it.total < 0.1)) return "warn";
+  return "ok";
+}
+
+// ---------- 畫面 ----------
+function render(){
+  document.querySelectorAll("[data-r]").forEach(b => b.setAttribute("aria-pressed", +b.dataset.r === state.radius));
+  document.querySelectorAll("[data-s]").forEach(b => b.setAttribute("aria-pressed", b.dataset.s === state.sort));
+
+  const notes = [];
+  if (state.demo) notes.push(`<div class="notice demo"><b>示範模式</b>：下面是假資料，只是讓你看看畫面。點右上角齒輪輸入 TDX 金鑰後就會顯示真實車位。</div>`);
+  if (state.error){
+    const m = {NOKEY:"還沒設定 TDX 金鑰，請點右上角齒輪。", BADKEY:"TDX 金鑰不正確或已失效，請到 TDX 會員中心確認後重新輸入。", RATE:"查詢太頻繁被 TDX 暫時擋下，等一分鐘再試。"}[state.error]
+      || `連不上 TDX（${esc(state.error)}）。請確認網路，或稍後再試。`;
+    notes.push(`<div class="notice err">${m}</div>`);
+  }
+  for (const n of state.data?.notes || []) notes.push(`<div class="notice">${esc(n)}</div>`);
+  $("#notices").innerHTML = notes.join("");
+
+  const o = origin();
+  if (circle) circle.remove();
+  circle = L.circle(o, {radius:state.radius, color:"#0b4fa8", weight:1, fillOpacity:.05}).addTo(map);
+
+  const items = (state.data?.items || [])
+    .map(it => ({...it, d: haversine(o, it.pos)}))
+    .filter(it => it.d <= state.radius)
+    .sort((a,b) => state.sort === "avail"
+      ? ((b.avail ?? -1) - (a.avail ?? -1)) || a.d - b.d
+      : a.d - b.d);
+
+  layer.clearLayers();
+  for (const it of items){
+    const c = cls(it);
+    const label = it.avail == null ? "P" : it.avail;
+    L.marker(it.pos, {icon:L.divIcon({className:"", html:`<div class="pin ${c}">${label}</div>`, iconSize:null, iconAnchor:[17,12]})})
+      .on("click", () => select(it.id, true)).addTo(layer);
+  }
+
+  if (state.data){
+    const age = Math.max(0, Math.round((Date.now() - state.data.time) / 60000));
+    setStatus(state.busy ? "更新中…" : `${items.length} 處・資料 ${age < 1 ? "剛剛" : age + " 分鐘前"}`);
+  } else if (!state.busy) setStatus("");
+
+  const list = $("#list");
+  if (!state.data){ list.innerHTML = state.error ? "" : `<div class="empty">正在查詢附近車位…</div>`; return; }
+  if (!items.length){ list.innerHTML = `<div class="empty">${fmtDist(state.radius)} 內沒有找到停車場。<br>試試把範圍放大到 2km。</div>`; return; }
+  list.innerHTML = items.map(it => {
+    const c = cls(it);
+    const n = it.avail == null ? "—" : it.avail;
+    const t = it.avail == null ? "無即時" : (it.total ? `/ ${it.total}` : "空位");
+    const [la, lo] = it.pos;
+    return `<article class="lot${state.selected===it.id?" sel":""}" id="lot-${esc(it.id)}" data-id="${esc(it.id)}">
+      <div class="count ${c}"><span class="n">${n}</span><span class="t">${t}</span></div>
+      <div class="info">
+        <h3>${esc(it.name)}</h3>
+        <div class="meta"><span class="dist">${fmtDist(it.d)}</span><span class="tag">${esc(it.kind)}</span>${it.t?`<span>${ago(it.t)}</span>`:""}${it.addr?`<span>${esc(it.addr)}</span>`:""}</div>
+        ${it.rate?`<div class="rate">${esc(it.rate)}</div>`:""}
+        ${it.fare?`<div class="fare">${esc(it.fare)}</div>`:""}
+        <div class="nav">
+          <a href="https://maps.apple.com/?daddr=${la},${lo}&dirflg=d" target="_blank" rel="noopener">Apple 導航</a>
+          <a href="https://www.google.com/maps/dir/?api=1&destination=${la},${lo}&travelmode=driving" target="_blank" rel="noopener">Google 導航</a>
+        </div>
+      </div></article>`;
+  }).join("");
+}
+function select(id, scroll){
+  state.selected = id;
+  document.querySelectorAll(".lot").forEach(el => el.classList.toggle("sel", el.dataset.id === id));
+  if (scroll) document.getElementById("lot-" + id)?.scrollIntoView({behavior:"smooth", block:"nearest"});
+}
+
+// ---------- 事件 ----------
+$("#list").addEventListener("click", e => {
+  if (e.target.closest("a")) return;
+  const f = e.target.closest(".fare"); if (f){ f.classList.toggle("open"); return; }
+  const card = e.target.closest(".lot"); if (!card) return;
+  const it = state.data?.items.find(x => x.id === card.dataset.id);
+  if (it){ select(it.id); moveTo(it.pos, 17); }
+});
+document.querySelectorAll("[data-r]").forEach(b => b.onclick = () => { state.radius = +b.dataset.r; store.set("radius", state.radius); render(); });
+document.querySelectorAll("[data-s]").forEach(b => b.onclick = () => { state.sort = b.dataset.s; store.set("sort", state.sort); render(); });
+$("#btnRefresh").onclick = refresh;
+$("#btnHere").onclick = () => { if (state.me){ state.center = null; moveTo(state.me, 16); setWhere("以你的位置搜尋"); $("#btnCenter").hidden = true; render(); } else locate(); };
+$("#btnCenter").onclick = () => { const c = map.getCenter(); $("#btnCenter").hidden = true; useCenter([c.lat, c.lng], "以地圖中心搜尋"); };
+
+const dlg = $("#dlg");
+$("#btnSettings").onclick = () => { const k = store.get("tdx_keys") || {}; $("#cid").value = k.id || ""; $("#csec").value = k.secret || ""; dlg.showModal(); };
+$("#frm").addEventListener("submit", e => {
+  const id = $("#cid").value.trim(), secret = $("#csec").value.trim();
+  if (!id || !secret){ e.preventDefault(); $(id ? "#csec" : "#cid").focus(); return; }
+  store.set("tdx_keys", {id, secret}); store.del("tdx_token");
+  state.demo = false; state.data = null; refresh();
+});
+$("#btnDemo").onclick = () => { dlg.close(); state.demo = true; refresh(); };
+$("#btnClear").onclick = () => {
+  ["tdx_keys","tdx_token","static_offstreet","static_onstreet","static_rates","debug_rate"].forEach(store.del);
+  $("#cid").value = ""; $("#csec").value = ""; state.demo = true; dlg.close(); refresh();
+};
+
+$("#btnDebug").onclick = () => {
+  const d = store.get("debug_rate"), out = $("#debugOut");
+  out.textContent = d ? "路邊費率原始資料（不含金鑰）：\n" + JSON.stringify(d, null, 1).slice(0, 2500) : "還沒有抓過費率資料，先儲存金鑰查詢一次。";
+  out.hidden = false;
+};
+
+// 地圖大小切換
+function setBigMap(on){
+  document.body.classList.toggle("bigmap", on);
+  $("#btnSize").textContent = on ? "縮小地圖" : "放大地圖";
+  store.set("bigmap", on);
+  setTimeout(() => map.invalidateSize(), 300);
+}
+$("#btnSize").onclick = () => setBigMap(!document.body.classList.contains("bigmap"));
+setBigMap(store.get("bigmap", false));
+
+// 畫面在前景時每分鐘自動更新
+setInterval(() => { if (document.visibilityState === "visible") refresh(); }, REFRESH_MS);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && state.data && Date.now() - state.data.time > REFRESH_MS) refresh();
+});
+
+render();
+locate();
+refresh();
+if (state.demo && !store.get("seen_intro")){ store.set("seen_intro", true); $("#btnSettings").click(); }
+})();
+</script>
+</body>
+</html>
