@@ -258,7 +258,7 @@ dialog input{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
         <button class="btn" type="button" id="btnDemo">切換到示範資料</button>
         <button class="btn" type="button" id="btnClear">清除金鑰與快取</button>
       </div>
-      <p class="ver">版本 6・2026/10/15</p>
+      <p class="ver">版本 6.1・2026/10/15</p>
     </section>
   </form>
 </dialog>
@@ -327,8 +327,15 @@ async function getToken(){
   store.set("tdx_token", {access:j.access_token, exp: Date.now() + (j.expires_in||3600)*1000});
   return j.access_token;
 }
+let tdxQueue = Promise.resolve();
+function tdxSlot(){ // 每個 TDX 請求至少間隔 300ms（免費方案每秒有次數上限）
+  const p = tdxQueue.then(() => new Promise(r => setTimeout(r, 300)));
+  tdxQueue = p;
+  return p;
+}
 async function tdx(path, fmt = "%24format=JSON"){
   const token = await getToken();
+  await tdxSlot();
   const res = await fetch(`${TDX}${path}${path.includes("?")?"&":"?"}${fmt}`, {headers:{Authorization:`Bearer ${token}`}});
   if (res.status === 401){ store.del("tdx_token"); throw new Error("BADKEY"); }
   if (res.status === 429) throw new Error("RATE");
@@ -508,13 +515,17 @@ if (!state.demo){ // 先顯示上次的資料，等新資料回來再換掉
 // ---------- 地圖 ----------
 const map = L.map("map", {zoomControl:false, attributionControl:true}).setView(KAOHSIUNG, 15);
 const darkQuery = matchMedia("(prefers-color-scheme: dark)");
-let tiles = null;
+let tiles = null, tilesFallback = false;
 function setTiles(){
-  const dark = document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && darkQuery.matches);
+  const dark = !tilesFallback && (document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && darkQuery.matches));
   if (tiles) tiles.remove();
   tiles = dark
     ? L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {maxZoom:19, subdomains:"abcd", attribution:"© OpenStreetMap © CARTO"})
     : L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap"});
+  let errs = 0;
+  tiles.on("tileerror", () => { // 深色底圖載不出來就改用一般地圖
+    if (dark && ++errs >= 3 && !tilesFallback){ tilesFallback = true; setTiles(); }
+  });
   tiles.addTo(map);
 }
 setTiles();
@@ -560,14 +571,19 @@ const setWhere = t => $("#where").textContent = t;
 const origin = () => state.center || state.me || KAOHSIUNG;
 
 // ---------- 載入 ----------
-async function refresh(){
+let cooldownUntil = 0, lastTry = 0;
+async function refresh(force){
   if (state.busy) return;
+  if (!state.demo && Date.now() < cooldownUntil){ render(); return; }
+  if (!force && !state.demo && Date.now() - lastTry < 30_000) return;
+  lastTry = Date.now();
   state.busy = true; state.error = null; setStatus("更新中…");
   try{
     if (state.demo) state.data = demoData(state.me || KAOHSIUNG);
     else { state.data = await loadReal(); store.set("last_data", state.data); }
   }catch(e){
     state.error = e.message; // 保留上次的資料繼續顯示
+    if (e.message === "RATE") cooldownUntil = Date.now() + 90_000;
   }finally{
     state.busy = false; render();
   }
@@ -612,7 +628,7 @@ function render(){
   if (state.demo) notes.push(`<div class="notice demo"><b>示範模式</b>：下面是假資料，只是讓你看看畫面。點右上角齒輪輸入 TDX 金鑰後就會顯示真實車位。</div>`);
   const fetchedAge = state.data?.fetchedAt ? Date.now() - state.data.fetchedAt : 0;
   if (state.error){
-    const m = {NOKEY:"還沒設定 TDX 金鑰，請點右上角齒輪。", BADKEY:"TDX 金鑰不正確或已失效，請到 TDX 會員中心確認後重新輸入。", RATE:"查詢太頻繁被 TDX 暫時擋下，等一分鐘再試。"}[state.error]
+    const m = {NOKEY:"還沒設定 TDX 金鑰，請點右上角齒輪。", BADKEY:"TDX 金鑰不正確或已失效，請到 TDX 會員中心確認後重新輸入。", RATE:"查詢太頻繁被 TDX 暫時擋下，1 分半後會自動再試。"}[state.error]
       || "連不上 TDX，請確認網路。";
     const keep = state.data && !state.demo ? `目前顯示的是 ${fmtDuration(fetchedAge)}前的資料，恢復後會自動更新。` : "";
     notes.push(`<div class="notice err">${m}${keep}</div>`);
@@ -863,7 +879,7 @@ document.querySelectorAll("[data-s]").forEach(b => b.onclick = () => { state.sor
 document.querySelectorAll("[data-k]").forEach(b => b.onclick = () => { state.kind = b.dataset.k; store.set("kind", state.kind); render(); });
 document.querySelectorAll("[data-nav]").forEach(b => b.onclick = () => { state.navApp = b.dataset.nav; store.set("navApp", state.navApp); render(); });
 $("#chipAvail").onclick = () => { state.onlyAvail = !state.onlyAvail; store.set("onlyAvail", state.onlyAvail); render(); };
-$("#btnRefresh").onclick = refresh;
+$("#btnRefresh").onclick = () => refresh(true);
 $("#btnHere").onclick = backToMe;
 $("#btnCenter").onclick = () => { const c = map.getCenter(); $("#btnCenter").hidden = true; useCenter([c.lat, c.lng], "以地圖中心搜尋"); };
 $("#btnSearch").onclick = () => { $("#sq").value = ""; showRecents(); $("#dlgSearch").showModal(); setTimeout(() => $("#sq").focus(), 50); };
@@ -889,13 +905,13 @@ $("#frm").addEventListener("submit", e => {
   const id = $("#cid").value.trim(), secret = $("#csec").value.trim();
   if (!id || !secret){ e.preventDefault(); $(id ? "#csec" : "#cid").focus(); return; }
   store.set("tdx_keys", {id, secret}); store.del("tdx_token");
-  state.demo = false; state.data = null; refresh();
+  state.demo = false; state.data = null; refresh(true);
 });
 dlg.addEventListener("close", () => { $("#debugOut").hidden = true; });
-$("#btnDemo").onclick = () => { dlg.close(); state.demo = true; refresh(); };
+$("#btnDemo").onclick = () => { dlg.close(); state.demo = true; refresh(true); };
 $("#btnClear").onclick = () => {
   Object.keys(localStorage).filter(k => /^(tdx_|static_|debug_|last_data)/.test(k)).forEach(store.del);
-  $("#cid").value = ""; $("#csec").value = ""; state.demo = true; dlg.close(); refresh();
+  $("#cid").value = ""; $("#csec").value = ""; state.demo = true; dlg.close(); refresh(true);
 };
 $("#btnDebug").onclick = () => {
   const out = $("#debugOut");
@@ -916,12 +932,12 @@ $("#btnSize").onclick = () => setBigMap(!document.body.classList.contains("bigma
 setBigMap(store.get("bigmap", false));
 
 // 畫面在前景時每分鐘自動更新；從導航 App 切回來時馬上更新
-setInterval(() => { if (document.visibilityState === "visible") refresh(); }, REFRESH_MS);
+setInterval(() => { if (document.visibilityState === "visible") refresh(true); }, REFRESH_MS);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
 
 render();
 locate();
-refresh();
+refresh(true);
 if (state.demo && !store.get("seen_intro")){ store.set("seen_intro", true); $("#btnSettings").click(); }
 })();
 </script>
