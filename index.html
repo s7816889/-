@@ -13,10 +13,10 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
-/* 版面：上半地圖、下半清單；像路邊的藍底白字 P 標誌，數字用窄體大字，開車時一眼看得到 */
+/* 版面：上方地圖、下方清單；藍底白字 P 標誌的路牌語彙，數字用窄體大字，一眼看得到 */
 :root{
   --bg:#eef2f7; --surface:#ffffff; --fg:#14202e; --muted:#5b6b7d; --line:#d6dee8;
-  --sign:#0b4fa8; --sign-fg:#ffffff;
+  --sign:#0b4fa8; --sign-fg:#ffffff; --car:#6a3fb5;
   --ok:#14864a; --warn:#c27a00; --full:#c62828; --none:#8a97a6;
   --font-ui:"Noto Sans TC",-apple-system,"PingFang TC","Heiti TC",sans-serif;
   --font-num:"Barlow Condensed","Arial Narrow",-apple-system,sans-serif;
@@ -24,39 +24,41 @@
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#0c1219; --surface:#151e29; --fg:#e7edf4; --muted:#93a3b5; --line:#263345;
-  --sign:#2f7ae0; --sign-fg:#ffffff; --ok:#3cc47c; --warn:#f0a92b; --full:#ff6b6b; --none:#6d7b8b; color-scheme:dark}}
+  --sign:#2f7ae0; --sign-fg:#ffffff; --car:#a07ae8; --ok:#2fae6b; --warn:#d99520; --full:#e05353; --none:#5f6d7d; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0c1219; --surface:#151e29; --fg:#e7edf4; --muted:#93a3b5; --line:#263345;
-  --sign:#2f7ae0; --sign-fg:#ffffff; --ok:#3cc47c; --warn:#f0a92b; --full:#ff6b6b; --none:#6d7b8b; color-scheme:dark}
+  --sign:#2f7ae0; --sign-fg:#ffffff; --car:#a07ae8; --ok:#2fae6b; --warn:#d99520; --full:#e05353; --none:#5f6d7d; color-scheme:dark}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--fg);font:15px/1.5 var(--font-ui);display:flex;flex-direction:column;-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;cursor:pointer}
-button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--sign);outline-offset:2px}
+button:focus-visible,select:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--sign);outline-offset:2px}
 
 header{background:var(--sign);color:var(--sign-fg);padding-top:env(safe-area-inset-top,0px);
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
-.bar{display:flex;align-items:center;gap:12px;padding-block:10px}
-.plogo{flex:none;width:34px;height:34px;border:2.5px solid currentColor;border-radius:7px;display:grid;place-items:center;font:700 24px/1 var(--font-num)}
+.bar{display:flex;align-items:center;gap:8px;padding-block:10px}
+.plogo{flex:none;width:34px;height:34px;border:2.5px solid currentColor;border-radius:7px;display:grid;place-items:center;font:700 24px/1 var(--font-num);margin-right:4px}
 .bar h1{font-size:17px;margin:0;font-weight:700;flex:1;min-width:0}
 .bar small{display:block;font-size:12px;font-weight:400;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.iconbtn{background:rgba(255,255,255,.16);border:0;border-radius:10px;width:40px;height:40px;display:grid;place-items:center}
+.iconbtn{flex:none;background:rgba(255,255,255,.16);border:0;border-radius:10px;width:40px;height:40px;display:grid;place-items:center;position:relative}
 .iconbtn svg{width:22px;height:22px}
+.iconbtn .dot{position:absolute;top:6px;right:6px;width:9px;height:9px;border-radius:50%;background:#ffd34d;border:2px solid var(--sign)}
 
 #map{flex:0 0 30%;min-height:170px;background:var(--line);position:relative;transition:flex-basis .25s ease}
 body.bigmap #map{flex-basis:68%}
-.rate{font-size:13.5px;font-weight:500;margin-top:4px}
-#debugOut{white-space:pre-wrap;word-break:break-all;font:11px/1.4 ui-monospace,Menlo,monospace;background:var(--bg);border-radius:8px;padding:8px;max-height:40vh;overflow:auto;margin-top:10px}
 .maptools{position:absolute;z-index:500;right:max(10px,env(safe-area-inset-right,0px));bottom:10px;display:flex;flex-direction:column;gap:8px}
-.maptools button{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;font-weight:500;box-shadow:0 2px 6px rgba(0,0,0,.15)}
+.maptools button{background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;font-weight:500;box-shadow:0 2px 6px rgba(0,0,0,.15)}
 
-.controls{display:flex;gap:8px;align-items:center;padding-block:10px;
+.controls{display:flex;flex-direction:column;gap:8px;padding-block:10px;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
-  border-bottom:1px solid var(--line);background:var(--surface);flex-wrap:wrap}
+  border-bottom:1px solid var(--line);background:var(--surface)}
+.crow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
-.seg button{background:transparent;border:0;padding:6px 11px;font-size:13px}
+.seg button{background:transparent;border:0;padding:6px 10px;font-size:13px}
 .seg button[aria-pressed="true"]{background:var(--sign);color:var(--sign-fg)}
-.controls .status{font-size:12px;color:var(--muted);margin-left:auto}
+.chip{border:1px solid var(--line);background:transparent;border-radius:999px;padding:5px 12px;font-size:13px}
+.chip[aria-pressed="true"]{background:var(--sign);border-color:var(--sign);color:var(--sign-fg)}
+.status{font-size:12px;color:var(--muted);margin-left:auto}
 
 main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
   padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
@@ -65,6 +67,7 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
 .notice b{color:var(--sign)}
 .notice.demo{border-color:var(--warn)}
 .notice.err{border-color:var(--full)}
+.notice.stale{border-color:var(--warn)}
 .list{display:flex;flex-direction:column;gap:10px}
 .lot{display:grid;grid-template-columns:72px 1fr;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
 .lot.sel{border-color:var(--sign);box-shadow:0 0 0 1px var(--sign)}
@@ -77,41 +80,65 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
 .meta{font-size:13px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;margin-top:2px}
 .meta .dist{font:600 15px/1.35 var(--font-num);color:var(--fg);font-variant-numeric:tabular-nums}
 .tag{font-size:11px;border:1px solid var(--line);border-radius:5px;padding:0 5px}
+.rate{font-size:13.5px;font-weight:500;margin-top:4px}
 .fare{font-size:12.5px;color:var(--muted);margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
 .fare.open{-webkit-line-clamp:unset}
 .nav{display:flex;gap:8px;margin-top:8px}
-.nav a{flex:1;text-align:center;text-decoration:none;color:var(--sign);border:1px solid var(--sign);border-radius:8px;padding:6px 0;font-size:13px;font-weight:500}
-.nav a:first-child{background:var(--sign);color:var(--sign-fg)}
-.going{background:var(--surface);border:2px solid var(--sign);border-radius:14px;padding:10px;margin-bottom:14px}
-.going.isfull{border-color:var(--full)}
-.going .ghead{display:flex;align-items:center;gap:8px;padding:0 2px 8px;font-size:13px;font-weight:700;color:var(--sign)}
-.going.isfull .ghead{color:var(--full)}
-.going .ghead button{margin-left:auto;background:var(--bg);border:0;border-radius:8px;padding:4px 10px;font-size:12.5px;font-weight:500;color:var(--fg)}
-.going .lot{border:0;padding:4px 2px}
-.going .alts{border-top:1px solid var(--line);margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:6px}
-.going .alts h4{margin:0 2px 2px;font-size:13px}
+.nav a,.nav button{flex:1;text-align:center;text-decoration:none;border-radius:8px;padding:7px 0;font-size:13.5px;font-weight:500;border:1px solid var(--sign);background:transparent;color:var(--sign)}
+.nav .go{background:var(--sign);color:var(--sign-fg)}
+
+.box{background:var(--surface);border:2px solid var(--sign);border-radius:14px;padding:10px;margin-bottom:14px}
+.box.isfull{border-color:var(--full)}
+.box.car{border-color:var(--car)}
+.box .bhead{display:flex;align-items:center;gap:8px;padding:0 2px 8px;font-size:13px;font-weight:700;color:var(--sign)}
+.box.isfull .bhead{color:var(--full)}
+.box.car .bhead{color:var(--car)}
+.box .bhead .sp{margin-left:auto;display:flex;gap:6px}
+.box .bhead button{background:var(--bg);border:0;border-radius:8px;padding:4px 10px;font-size:12.5px;font-weight:500;color:var(--fg)}
+.box .lot{border:0;padding:4px 2px}
+.box .alts{border-top:1px solid var(--line);margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:6px}
+.box .alts h4{margin:0 2px 2px;font-size:13px}
+.carinfo{display:grid;grid-template-columns:auto 1fr;gap:2px 14px;padding:0 4px;font-size:14px}
+.carinfo dt{color:var(--muted)}
+.carinfo dd{margin:0;font-weight:500}
+.carinfo .big{font:700 22px/1.2 var(--font-num);font-variant-numeric:tabular-nums}
+.small{font-size:12px;color:var(--muted);padding:6px 4px 0}
+.box.car .nav .go{background:var(--car);border-color:var(--car)}
+.box.car .nav button{border-color:var(--car);color:var(--car)}
 .empty{text-align:center;color:var(--muted);padding:24px 8px}
 
 dialog{border:0;border-radius:16px;background:var(--surface);color:var(--fg);width:min(440px,calc(100% - 32px));max-height:calc(100% - 48px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));overflow-y:auto;padding:16px 20px 20px}
+dialog::backdrop{background:rgba(0,0,0,.45)}
 .dlghead{display:flex;align-items:center;justify-content:space-between;position:sticky;top:-16px;background:var(--surface);margin:-16px -20px 0;padding:12px 12px 8px 20px;z-index:1}
-.dlghead h2{margin:0}
+.dlghead h2{margin:0;font-size:18px}
 .xbtn{width:40px;height:40px;border:0;border-radius:50%;background:var(--bg);display:grid;place-items:center}
 .xbtn svg{width:20px;height:20px}
 dialog section{border-top:1px solid var(--line);padding-top:14px;margin-top:14px}
 dialog section:first-of-type{border-top:0;margin-top:4px;padding-top:4px}
 dialog h3{margin:0 0 4px;font-size:15px}
-.ver{margin:12px 0 0!important;font-size:12px!important;text-align:center}
-dialog::backdrop{background:rgba(0,0,0,.45)}
-dialog h2{margin:0 0 6px;font-size:18px}
 dialog p{margin:0 0 12px;font-size:13.5px;color:var(--muted)}
 dialog label{display:block;font-size:13px;font-weight:500;margin:10px 0 4px}
 dialog input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--fg);font:16px var(--font-ui)}
+.ver{margin:12px 0 0!important;font-size:12px!important;text-align:center}
 .row{display:flex;gap:8px;margin-top:16px;flex-wrap:wrap}
 .btn{flex:1;border:0;border-radius:10px;padding:11px;font-weight:500;background:var(--line)}
 .btn.primary{background:var(--sign);color:var(--sign-fg)}
-.leaflet-container{font-family:var(--font-ui)}
+#debugOut{white-space:pre-wrap;word-break:break-all;font:11px/1.4 ui-monospace,Menlo,monospace;background:var(--bg);border-radius:8px;padding:8px;max-height:40vh;overflow:auto;margin-top:10px}
+.sform{display:flex;gap:8px;margin-top:8px}
+.sform input{flex:1;min-width:0}
+.sform button{flex:none;border:0;border-radius:9px;padding:0 16px;background:var(--sign);color:var(--sign-fg);font-weight:500}
+.results{display:flex;flex-direction:column;margin-top:10px}
+.results button{display:block;text-align:left;background:transparent;border:0;border-bottom:1px solid var(--line);padding:11px 4px}
+.results button b{display:block;font-size:15px;font-weight:500}
+.results button span{font-size:12.5px;color:var(--muted)}
+.results .hint{font-size:13px;color:var(--muted);padding:10px 4px}
+
+.leaflet-container{font-family:var(--font-ui);background:var(--line)}
 .pin{border-radius:8px;color:#fff;font:700 15px/22px var(--font-num);text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35);min-width:30px;padding:0 4px;white-space:nowrap}
 .me{width:18px;height:18px;border-radius:50%;background:#1a73e8;border:3px solid #fff;box-shadow:0 0 0 6px rgba(26,115,232,.25)}
+.flag{width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--sign);border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.carpin{width:30px;height:30px;border-radius:9px;background:var(--car);border:2px solid #fff;display:grid;place-items:center;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+.carpin svg{width:18px;height:18px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
@@ -120,6 +147,13 @@ dialog input{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
   <div class="bar">
     <div class="plogo" aria-hidden="true">P</div>
     <h1>高雄找車位<small id="where">定位中…</small></h1>
+    <button class="iconbtn" id="btnSearch" aria-label="搜尋目的地">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+    </button>
+    <button class="iconbtn" id="btnCar" aria-label="我的車">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14v-5l-2-5H7l-2 5v5z"/><path d="M5 12h14"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg>
+      <span class="dot" id="carDot" hidden></span>
+    </button>
     <button class="iconbtn" id="btnRefresh" aria-label="重新整理">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
     </button>
@@ -138,29 +172,68 @@ dialog input{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
 </div>
 
 <div class="controls">
-  <div class="seg" role="group" aria-label="搜尋範圍">
-    <button data-r="500">500m</button><button data-r="1000">1km</button><button data-r="2000">2km</button>
+  <div class="crow">
+    <div class="seg" role="group" aria-label="搜尋範圍">
+      <button data-r="500">500m</button><button data-r="1000">1km</button><button data-r="2000">2km</button>
+    </div>
+    <div class="seg" role="group" aria-label="排序">
+      <button data-s="dist">最近</button><button data-s="avail">最多空位</button>
+    </div>
   </div>
-  <div class="seg" role="group" aria-label="排序">
-    <button data-s="dist">最近</button><button data-s="avail">最多空位</button>
+  <div class="crow">
+    <button class="chip" id="chipAvail">只看有空位</button>
+    <div class="seg" role="group" aria-label="類型">
+      <button data-k="all">全部</button><button data-k="停車場">停車場</button><button data-k="路邊">路邊</button>
+    </div>
+    <span class="status" id="status"></span>
   </div>
-  <span class="status" id="status"></span>
 </div>
 
 <main>
+  <div id="parked"></div>
   <div id="target"></div>
   <div id="notices"></div>
+  <div id="best"></div>
   <div class="list" id="list"></div>
 </main>
 
+<!-- 搜尋目的地 -->
+<dialog id="dlgSearch">
+  <div class="dlghead">
+    <h2>搜尋目的地</h2>
+    <button class="xbtn" type="button" data-close aria-label="關閉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <p>輸入地標或地址，例如「巨蛋」、「駁二」、「中正四路 211 號」，會查那附近的車位。</p>
+  <form class="sform" id="sform">
+    <input id="sq" type="search" enterkeyhint="search" autocomplete="off" placeholder="地標或地址">
+    <button type="submit">搜尋</button>
+  </form>
+  <div class="results" id="sres"></div>
+</dialog>
+
+<!-- 我的車 -->
+<dialog id="dlgCar">
+  <div class="dlghead">
+    <h2>我的車</h2>
+    <button class="xbtn" type="button" data-close aria-label="關閉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
+  <div id="carBody"></div>
+</dialog>
+
+<!-- 設定 -->
 <dialog id="dlg">
   <form id="frm" method="dialog">
     <div class="dlghead">
       <h2>設定</h2>
-      <button class="xbtn" type="button" id="btnClose" aria-label="關閉">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
-      </button>
+      <button class="xbtn" type="button" data-close aria-label="關閉"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
+    <section>
+      <h3>導航 App</h3>
+      <p>按「導航」時要開哪一個。</p>
+      <div class="seg" role="group" aria-label="導航 App" style="width:max-content">
+        <button type="button" data-nav="apple">Apple 地圖</button><button type="button" data-nav="google">Google 地圖</button>
+      </div>
+    </section>
     <section>
       <h3>TDX 金鑰</h3>
       <p>從 TDX 會員中心複製 Client ID 和 Client Secret 貼在這裡。金鑰只存在這支手機的瀏覽器裡。</p>
@@ -169,14 +242,14 @@ dialog input{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
       <label for="csec">Client Secret</label>
       <input id="csec" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
       <div class="row">
-        <button class="btn" type="button" id="btnCancel">取消</button>
-        <button class="btn primary" type="submit" id="btnSave">儲存並查詢</button>
+        <button class="btn" type="button" data-close>取消</button>
+        <button class="btn primary" type="submit">儲存並查詢</button>
       </div>
     </section>
     <section>
       <h3>資料檢查</h3>
-      <p>路邊費率沒顯示時，按下面的按鈕，把出現的內容截圖給 Claude。內容只有停車資料，不含金鑰。</p>
-      <div class="row"><button class="btn" type="button" id="btnDebug">顯示費率原始資料</button></div>
+      <p>費率或搜尋結果怪怪的時候，按下面的按鈕，把出現的內容截圖給 Claude。內容只有停車資料，不含金鑰。</p>
+      <div class="row"><button class="btn" type="button" id="btnDebug">顯示原始資料</button></div>
       <pre id="debugOut" hidden></pre>
     </section>
     <section>
@@ -185,7 +258,7 @@ dialog input{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
         <button class="btn" type="button" id="btnDemo">切換到示範資料</button>
         <button class="btn" type="button" id="btnClear">清除金鑰與快取</button>
       </div>
-      <p class="ver">版本 5・2026/10/15</p>
+      <p class="ver">版本 6・2026/10/15</p>
     </section>
   </form>
 </dialog>
@@ -197,6 +270,7 @@ const TDX = "https://tdx.transportdata.tw";
 const CITY = "Kaohsiung";
 const KAOHSIUNG = [22.6273, 120.3014]; // 預設：高雄市中心
 const REFRESH_MS = 60_000;
+const STALE_MS = 3 * 60_000;
 
 // ---------- 小工具 ----------
 const $ = s => document.querySelector(s);
@@ -215,11 +289,16 @@ function haversine(a, b){
 const fmtDist = m => m < 1000 ? `${Math.round(m/10)*10} m` : `${(m/1000).toFixed(1)} km`;
 const firstArray = o => Array.isArray(o) ? o : (o && Object.values(o).find(Array.isArray)) || [];
 const zh = v => typeof v === "string" ? v : (v?.Zh_tw || v?.En || "");
+const mins = ms => Math.max(0, Math.round(ms / 60000));
+const ago = t => { if (!t) return ""; const m = mins(Date.now() - t); return m < 1 ? "剛剛更新" : m < 60 ? `${m} 分鐘前更新` : `${Math.round(m/60)} 小時前更新`; };
+function fmtDuration(ms){ const m = mins(ms); return m < 60 ? `${m} 分鐘` : `${Math.floor(m/60)} 小時 ${m%60} 分`; }
+function fmtClock(t){ const d = new Date(t); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; }
 function getPos(o){
   for (const k of ["CarParkPosition","ParkingSegmentPosition","Position","ParkingSpotPosition"]){
     const p = o?.[k]; if (p?.PositionLat && p?.PositionLon) return [+p.PositionLat, +p.PositionLon];
   }
   if (o?.PositionLat && o?.PositionLon) return [+o.PositionLat, +o.PositionLon];
+  if (o?.Lat && o?.Lon) return [+o.Lat, +o.Lon];
   const wkt = o?.Geometry || o?.ParkingSegmentGeometry || o?.GeometryWKT;
   if (typeof wkt === "string"){ // WKT 是「經度 緯度」，取所有點的平均當位置
     const nums = wkt.match(/-?\d+\.\d+/g)?.map(Number) || [];
@@ -248,17 +327,17 @@ async function getToken(){
   store.set("tdx_token", {access:j.access_token, exp: Date.now() + (j.expires_in||3600)*1000});
   return j.access_token;
 }
-async function tdx(path){
+async function tdx(path, fmt = "%24format=JSON"){
   const token = await getToken();
-  const res = await fetch(`${TDX}${path}${path.includes("?")?"&":"?"}%24format=JSON`, {headers:{Authorization:`Bearer ${token}`}});
+  const res = await fetch(`${TDX}${path}${path.includes("?")?"&":"?"}${fmt}`, {headers:{Authorization:`Bearer ${token}`}});
   if (res.status === 401){ store.del("tdx_token"); throw new Error("BADKEY"); }
   if (res.status === 429) throw new Error("RATE");
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
-// 停車場基本資料一天抓一次就好
+// 停車場、路段基本資料一天抓一次就好
 async function getStatic(kind, path){
-  const key = `static_${kind}_v2`, today = new Date().toDateString();
+  const key = `static_${kind}_v3`, today = new Date().toDateString();
   const c = store.get(key);
   if (c && c.day === today) return c.items;
   const rows = firstArray(await tdx(path));
@@ -279,7 +358,6 @@ async function getStatic(kind, path){
 
 async function loadReal(){
   const out = [], notes = [];
-  // 1) 路外停車場
   const [lots, avail] = await Promise.all([
     getStatic("offstreet", `/api/basic/v1/Parking/OffStreet/CarPark/City/${CITY}`),
     tdx(`/api/basic/v1/Parking/OffStreet/ParkingAvailability/City/${CITY}`)
@@ -292,9 +370,8 @@ async function loadReal(){
     if (r.t) newest = Math.max(newest, r.t);
     out.push({...l, kind:"停車場", ...r});
   }
-  // 2) 路邊停車
   try{
-    const [segs, savail, rates] = await Promise.all([
+    const [segs, savail, cat] = await Promise.all([
       getStatic("onstreet", `/api/basic/v1/Parking/OnStreet/ParkingSegment/City/${CITY}`),
       tdx(`/api/basic/v1/Parking/OnStreet/ParkingSegmentAvailability/City/${CITY}`),
       getRates()
@@ -304,21 +381,21 @@ async function loadReal(){
       const a = smap.get(s.id);
       const r = a ? readAvail(a) : {avail:null, total:null, t:null};
       if (r.t) newest = Math.max(newest, r.t);
-      const rate = rateFor(s, rates);
-      // 費率名稱已經顯示在費率裡時，就不再重複顯示說明
-      out.push({...s, kind:"路邊", ...r, rate, fare: rate && rate.includes(s.fare) ? "" : s.fare});
+      const rates = ratesFor(s, cat);
+      const rate = rates.map(x => x.text).join("；");
+      out.push({...s, kind:"路邊", ...r, rates, rate, fare: rate && rate.includes(s.fare) ? "" : s.fare});
     }
     if (!segs.length) notes.push("TDX 目前沒有高雄的路邊停車格資料，清單只顯示停車場。");
   }catch(e){
     if (e.message === "BADKEY" || e.message === "NOKEY") throw e;
     notes.push("高雄的路邊停車格即時資料目前抓不到，清單只顯示停車場。");
   }
-  return {items: out, notes, time: newest || Date.now()};
+  return {items: out, notes, time: newest || Date.now(), fetchedAt: Date.now()};
 }
 // 優先取「自小客車位」的剩餘數
 function readAvail(a){
   const list = a.Availabilities || [];
-  const car = list.find(x => x.SpaceType === 1) ;
+  const car = list.find(x => x.SpaceType === 1);
   const src = car || a;
   const total = src.NumberOfSpaces ?? src.TotalSpaces ?? a.TotalSpaces;
   let avail = src.AvailableSpaces ?? a.AvailableSpaces;
@@ -328,10 +405,10 @@ function readAvail(a){
 }
 
 // ---------- 路邊費率 ----------
-// TDX 回傳的是全市共用的「費率表」（FlatRates 計次、HourlyRates 計時），
-// 路段本身用 RateID 或費率名稱（FareDescription）對應到費率表。
+// TDX 回傳全市共用的費率表（FlatRates 計次、HourlyRates 計時），
+// 路段用 RateID 或費率名稱（FareDescription）對應過去。
 async function getRates(){
-  const key = "static_rates_v2", today = new Date().toDateString();
+  const key = "static_rates_v3", today = new Date().toDateString();
   const c = store.get(key);
   if (c && c.day === today) return c.cat;
   let rows = [];
@@ -346,26 +423,23 @@ async function getRates(){
       for (const r of list){
         if (!r || r.RatePrice == null) continue;
         if (r.SpaceType != null && r.SpaceType !== 0 && r.SpaceType !== 1) continue; // 只留汽車適用的
-        const text = rateText(r, hourly);
         const name = String(r.RateName || "").trim();
-        if (r.RateID != null) (cat.byId[r.RateID] ||= []).push(text);
-        if (name) (cat.byName[name] ||= []).push(text);
+        const obj = {type: hourly ? "hour" : "flat", price: +r.RatePrice, q: +r.RateQualifier || 60, name};
+        obj.text = rateText(obj);
+        if (r.RateID != null) (cat.byId[r.RateID] ||= []).push(obj);
+        if (name) (cat.byName[name] ||= []).push(obj);
       }
     }
   }
   store.set(key, {day: today, cat});
   return cat;
 }
-function rateText(r, hourly){
-  const name = String(r.RateName || "").trim();
-  let base;
-  if (hourly){
-    const q = +r.RateQualifier || 60;
-    base = `${r.RatePrice} 元 / ${q === 60 ? "小時" : q === 30 ? "半小時" : q + " 分鐘"}`;
-  } else base = `${r.RatePrice} 元 / 次`;
-  // 名稱只是重複價格（像「計次20」「計時10」「半時計15」）就不顯示
-  const plain = !name || /^(計次|計時|半時計)\s*\d+$/.test(name);
-  return plain ? base : `${base}（${name}）`;
+function rateText(r){
+  const base = r.type === "hour"
+    ? `${r.price} 元 / ${r.q === 60 ? "小時" : r.q === 30 ? "半小時" : r.q + " 分鐘"}`
+    : `${r.price} 元 / 次`;
+  const plain = !r.name || /^(計次|計時|半時計)\s*\d+$/.test(r.name);
+  return plain ? base : `${base}（${r.name}）`;
 }
 function collectRateIds(o){
   const ids = new Set();
@@ -380,39 +454,73 @@ function collectRateIds(o){
   walk(o);
   return [...ids];
 }
-function rateFor(seg, cat){
-  const out = [];
+function ratesFor(seg, cat){
+  let out = [];
   for (const id of seg.rateIds || []) out.push(...(cat.byId[id] || []));
   if (!out.length && seg.fare){
     for (const part of seg.fare.split(/[、,，;；\/]/)) out.push(...(cat.byName[part.trim()] || []));
   }
-  return [...new Set(out)].slice(0, 3).join("；");
+  const seen = new Set();
+  return out.filter(r => !seen.has(r.text) && seen.add(r.text)).slice(0, 3);
 }
-const ago = t => { if (!t) return ""; const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "剛剛更新" : m < 60 ? `${m} 分鐘前更新` : `${Math.round(m/60)} 小時前更新`; };
+// 依費率估算停車費（大概值，以實際開單為準）
+function estimateFee(rates, ms){
+  if (!rates?.length) return null;
+  const m = Math.max(1, mins(ms));
+  const r = rates.find(x => x.type === "hour") || rates[0];
+  if (r.type === "hour"){
+    if (/前半小時免費/.test(r.name) && m <= 30) return {amount: 0, basis: r.text};
+    return {amount: Math.ceil(m / r.q) * r.price, basis: r.text};
+  }
+  const re = r.name.match(/每\s*(\d+(?:\.\d+)?)\s*小時/);
+  const times = re ? Math.ceil(m / (parseFloat(re[1]) * 60)) : 1;
+  return {amount: times * r.price, basis: r.text};
+}
 
 // ---------- 示範資料（非真實） ----------
 function demoData(c){
   const names = ["示範｜中央公園地下停車場","示範｜文化中心平面停車場","示範｜捷運站轉乘停車場","示範｜商圈立體停車場","示範｜五福路路邊停車格","示範｜市場平面停車場","示範｜醫院附設停車場","示範｜公園路路邊停車格"];
   const off = [[.002,.001],[-.003,.004],[.006,-.002],[-.001,-.006],[.004,.005],[-.007,.002],[.009,.007],[-.005,-.009]];
   const av = [42,5,0,118,3,null,27,0], tot=[300,80,150,420,12,60,200,8];
-  return {items: names.map((n,i)=>({id:"d"+i,name:n,pos:[c[0]+off[i][0],c[1]+off[i][1]],addr:"示範地址",
-    fare:n.includes("路邊")?"示範：每6小時加簽一次":"示範：小型車每小時 30 元，當日最高 200 元。",
-    rate:n.includes("路邊")?"示範：20 元 / 每小時（08:00–18:00）":"",
-    kind:n.includes("路邊")?"路邊":"停車場",avail:av[i],total:tot[i],t:Date.now()-i*90000})),
-    notes:[], time: Date.now()};
+  const demoRate = [{type:"hour", price:15, q:30, name:"半時計15"}].map(r => ({...r, text: rateText(r)}));
+  return {items: names.map((n,i) => {
+    const road = n.includes("路邊");
+    return {id:"d"+i, name:n, pos:[c[0]+off[i][0], c[1]+off[i][1]], addr:"示範地址",
+      fare: road ? "" : "示範：小型車每小時 30 元，當日最高 200 元。",
+      rates: road ? demoRate : [], rate: road ? demoRate[0].text : "",
+      kind: road ? "路邊" : "停車場", avail:av[i], total:tot[i], t:Date.now()-i*90000};
+  }), notes:[], time: Date.now(), fetchedAt: Date.now()};
 }
 
 // ---------- 狀態 ----------
 const state = {
-  me: null, center: null, radius: store.get("radius", 1000), sort: store.get("sort", "dist"),
+  me: null, center: null, centerLabel: "",
+  radius: store.get("radius", 1000), sort: store.get("sort", "dist"),
+  onlyAvail: store.get("onlyAvail", false), kind: store.get("kind", "all"),
+  navApp: store.get("navApp", "apple"),
   data: null, selected: null, demo: !store.get("tdx_keys"), busy:false, error:null
 };
+if (!state.demo){ // 先顯示上次的資料，等新資料回來再換掉
+  const last = store.get("last_data");
+  if (last?.items?.length) state.data = last;
+}
 
 // ---------- 地圖 ----------
 const map = L.map("map", {zoomControl:false, attributionControl:true}).setView(KAOHSIUNG, 15);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap"}).addTo(map);
+const darkQuery = matchMedia("(prefers-color-scheme: dark)");
+let tiles = null;
+function setTiles(){
+  const dark = document.documentElement.dataset.theme === "dark" || (document.documentElement.dataset.theme !== "light" && darkQuery.matches);
+  if (tiles) tiles.remove();
+  tiles = dark
+    ? L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {maxZoom:19, subdomains:"abcd", attribution:"© OpenStreetMap © CARTO"})
+    : L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {maxZoom:19, attribution:"© OpenStreetMap"});
+  tiles.addTo(map);
+}
+setTiles();
+darkQuery.addEventListener?.("change", setTiles);
 const layer = L.layerGroup().addTo(map);
-let meMarker = null, circle = null, programmatic = false;
+let meMarker = null, circle = null, flag = null, carMarker = null, programmatic = false;
 map.on("moveend", () => {
   if (programmatic){ programmatic = false; return; }
   const c = map.getCenter(), ref = state.center || state.me;
@@ -428,14 +536,26 @@ function locate(){
     state.me = [p.coords.latitude, p.coords.longitude];
     if (!meMarker) meMarker = L.marker(state.me, {icon:L.divIcon({className:"",html:'<div class="me"></div>',iconSize:[18,18]}), interactive:false, zIndexOffset:1000}).addTo(map);
     else meMarker.setLatLng(state.me);
-    if (first){ state.center = null; moveTo(state.me, 16); setWhere("以你的位置搜尋"); render(); }
+    if (first && !state.center){ moveTo(state.me, 16); setWhere("以你的位置搜尋"); render(); }
   }, err => {
     const msg = err.code === 1 ? "沒有定位權限，改用高雄市中心（可在設定→Safari→位置 開啟）" : "暫時抓不到定位，改用高雄市中心";
     setWhere(msg);
-    if (!state.me) useCenter(KAOHSIUNG, "高雄市中心");
+    if (!state.me && !state.center) useCenter(KAOHSIUNG, "高雄市中心");
   }, {enableHighAccuracy:true, maximumAge:15000, timeout:15000});
 }
-function useCenter(c, label){ state.center = c; moveTo(c); setWhere(label); render(); }
+function useCenter(c, label, isDest){
+  state.center = c; state.centerLabel = label; moveTo(c);
+  setWhere(label);
+  if (flag){ flag.remove(); flag = null; }
+  if (isDest) flag = L.marker(c, {icon:L.divIcon({className:"", html:'<div class="flag"></div>', iconSize:[26,26], iconAnchor:[13,26]}), interactive:false, zIndexOffset:900}).addTo(map);
+  render();
+}
+function backToMe(){
+  if (flag){ flag.remove(); flag = null; }
+  state.center = null;
+  if (state.me){ moveTo(state.me, 16); setWhere("以你的位置搜尋"); $("#btnCenter").hidden = true; render(); }
+  else locate();
+}
 const setWhere = t => $("#where").textContent = t;
 const origin = () => state.center || state.me || KAOHSIUNG;
 
@@ -444,9 +564,10 @@ async function refresh(){
   if (state.busy) return;
   state.busy = true; state.error = null; setStatus("更新中…");
   try{
-    state.data = state.demo ? demoData(state.me || KAOHSIUNG) : await loadReal();
+    if (state.demo) state.data = demoData(state.me || KAOHSIUNG);
+    else { state.data = await loadReal(); store.set("last_data", state.data); }
   }catch(e){
-    state.error = e.message;
+    state.error = e.message; // 保留上次的資料繼續顯示
   }finally{
     state.busy = false; render();
   }
@@ -459,56 +580,82 @@ function cls(it){
   return "ok";
 }
 
+// ---------- 導航連結 ----------
+function navUrl(pos, walk){
+  const [la, lo] = pos;
+  return state.navApp === "google"
+    ? `https://www.google.com/maps/dir/?api=1&destination=${la},${lo}&travelmode=${walk ? "walking" : "driving"}`
+    : `https://maps.apple.com/?daddr=${la},${lo}&dirflg=${walk ? "w" : "d"}`;
+}
+
 // ---------- 畫面 ----------
+function visibleItems(){
+  const o = origin();
+  return (state.data?.items || [])
+    .filter(it => state.kind === "all" || it.kind === state.kind)
+    .filter(it => !state.onlyAvail || it.avail > 0)
+    .map(it => ({...it, d: haversine(o, it.pos)}))
+    .filter(it => it.d <= state.radius)
+    .sort((a,b) => state.sort === "avail"
+      ? ((b.avail ?? -1) - (a.avail ?? -1)) || a.d - b.d
+      : a.d - b.d);
+}
 function render(){
   document.querySelectorAll("[data-r]").forEach(b => b.setAttribute("aria-pressed", +b.dataset.r === state.radius));
   document.querySelectorAll("[data-s]").forEach(b => b.setAttribute("aria-pressed", b.dataset.s === state.sort));
+  document.querySelectorAll("[data-k]").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === state.kind));
+  document.querySelectorAll("[data-nav]").forEach(b => b.setAttribute("aria-pressed", b.dataset.nav === state.navApp));
+  $("#chipAvail").setAttribute("aria-pressed", state.onlyAvail);
 
+  // 提示
   const notes = [];
   if (state.demo) notes.push(`<div class="notice demo"><b>示範模式</b>：下面是假資料，只是讓你看看畫面。點右上角齒輪輸入 TDX 金鑰後就會顯示真實車位。</div>`);
+  const fetchedAge = state.data?.fetchedAt ? Date.now() - state.data.fetchedAt : 0;
   if (state.error){
     const m = {NOKEY:"還沒設定 TDX 金鑰，請點右上角齒輪。", BADKEY:"TDX 金鑰不正確或已失效，請到 TDX 會員中心確認後重新輸入。", RATE:"查詢太頻繁被 TDX 暫時擋下，等一分鐘再試。"}[state.error]
-      || `連不上 TDX（${esc(state.error)}）。請確認網路，或稍後再試。`;
-    notes.push(`<div class="notice err">${m}</div>`);
+      || "連不上 TDX，請確認網路。";
+    const keep = state.data && !state.demo ? `目前顯示的是 ${fmtDuration(fetchedAge)}前的資料，恢復後會自動更新。` : "";
+    notes.push(`<div class="notice err">${m}${keep}</div>`);
+  } else if (!state.demo && state.data && fetchedAge > STALE_MS){
+    notes.push(`<div class="notice stale">這是 ${fmtDuration(fetchedAge)}前的資料，正在更新…</div>`);
   }
   for (const n of state.data?.notes || []) notes.push(`<div class="notice">${esc(n)}</div>`);
   $("#notices").innerHTML = notes.join("");
 
   const o = origin();
   if (circle) circle.remove();
-  circle = L.circle(o, {radius:state.radius, color:"#0b4fa8", weight:1, fillOpacity:.05}).addTo(map);
+  circle = L.circle(o, {radius:state.radius, color:"#0b4fa8", weight:1, fillOpacity:.05, interactive:false}).addTo(map);
 
-  const items = (state.data?.items || [])
-    .map(it => ({...it, d: haversine(o, it.pos)}))
-    .filter(it => it.d <= state.radius)
-    .sort((a,b) => state.sort === "avail"
-      ? ((b.avail ?? -1) - (a.avail ?? -1)) || a.d - b.d
-      : a.d - b.d);
-
+  const items = visibleItems();
   layer.clearLayers();
   for (const it of items){
-    const c = cls(it);
     const label = it.avail == null ? "P" : it.avail;
-    L.marker(it.pos, {icon:L.divIcon({className:"", html:`<div class="pin ${c}">${label}</div>`, iconSize:null, iconAnchor:[17,12]})})
+    L.marker(it.pos, {icon:L.divIcon({className:"", html:`<div class="pin ${cls(it)}">${label}</div>`, iconSize:null, iconAnchor:[17,12]})})
       .on("click", () => select(it.id, true)).addTo(layer);
   }
 
   if (state.data){
-    const age = Math.max(0, Math.round((Date.now() - state.data.time) / 60000));
+    const age = mins(Date.now() - state.data.time);
     setStatus(state.busy ? "更新中…" : `${items.length} 處・資料 ${age < 1 ? "剛剛" : age + " 分鐘前"}`);
   } else if (!state.busy) setStatus("");
 
+  renderParked();
   renderTarget();
+  renderBest(items);
+
   const list = $("#list");
   if (!state.data){ list.innerHTML = state.error ? "" : `<div class="empty">正在查詢附近車位…</div>`; return; }
-  if (!items.length){ list.innerHTML = `<div class="empty">${fmtDist(state.radius)} 內沒有找到停車場。<br>試試把範圍放大到 2km。</div>`; return; }
-  list.innerHTML = items.filter(it => it.id !== activeTarget()?.id).map(it => lotCard(it)).join("");
+  if (!items.length){
+    const why = state.onlyAvail || state.kind !== "all" ? "<br>也可以取消上面的篩選條件。" : "<br>試試把範圍放大到 2km。";
+    list.innerHTML = `<div class="empty">${fmtDist(state.radius)} 內沒有符合的車位。${why}</div>`; return;
+  }
+  const tid = activeTarget()?.id;
+  list.innerHTML = items.filter(it => it.id !== tid).map(it => lotCard(it)).join("");
 }
 function lotCard(it, compact){
   const c = cls(it);
   const n = it.avail == null ? "—" : it.avail;
   const t = it.avail == null ? "無即時" : (it.total ? `/ ${it.total}` : "空位");
-  const [la, lo] = it.pos;
   return `<article class="lot${state.selected===it.id?" sel":""}" id="lot-${esc(it.id)}" data-id="${esc(it.id)}">
     <div class="count ${c}"><span class="n">${n}</span><span class="t">${t}</span></div>
     <div class="info">
@@ -516,52 +663,180 @@ function lotCard(it, compact){
       <div class="meta">${it.d!=null?`<span class="dist">${fmtDist(it.d)}</span>`:""}<span class="tag">${esc(it.kind)}</span>${it.t?`<span>${ago(it.t)}</span>`:""}${!compact&&it.addr?`<span>${esc(it.addr)}</span>`:""}</div>
       ${it.rate?`<div class="rate">${esc(it.rate)}</div>`:""}
       ${!compact&&it.fare?`<div class="fare">${esc(it.fare)}</div>`:""}
-      <div class="nav">
-        <a href="https://maps.apple.com/?daddr=${la},${lo}&dirflg=d" target="_blank" rel="noopener">Apple 導航</a>
-        <a href="https://www.google.com/maps/dir/?api=1&destination=${la},${lo}&travelmode=driving" target="_blank" rel="noopener">Google 導航</a>
-      </div>
+      <div class="nav"><a class="go" data-go href="${navUrl(it.pos)}" target="_blank" rel="noopener">導航</a></div>
     </div></article>`;
 }
 
-// ---------- 正在前往的車位 ----------
-const TARGET_TTL = 2 * 3600_000; // 2 小時後自動結束
+// ---------- 最佳車位 ----------
+function pickBest(items){
+  const ok = items.filter(x => x.avail > 0);
+  const roomy = ok.filter(x => x.avail >= 3);
+  return (roomy.length ? roomy : ok).sort((a, b) => a.d - b.d)[0] || null;
+}
+function renderBest(items){
+  const box = $("#best");
+  if (activeTarget() || !items.length){ box.innerHTML = ""; return; }
+  const b = pickBest(items);
+  if (!b){ box.innerHTML = ""; return; }
+  box.innerHTML = `<section class="box"><div class="bhead">推薦：最近且還有空位</div>${lotCard(b, true)}</section>`;
+}
+
+// ---------- 正在前往 ----------
+const TARGET_TTL = 2 * 3600_000;
 function activeTarget(){
   const t = store.get("target");
   if (!t || Date.now() - t.at > TARGET_TTL){ if (t) store.del("target"); return null; }
   return t;
 }
-function setTarget(it){ store.set("target", {id: it.id, name: it.name, pos: it.pos, at: Date.now()}); }
+function setTarget(it){ store.set("target", {id: it.id, name: it.name, pos: it.pos, kind: it.kind, at: Date.now()}); }
 function renderTarget(){
   const box = $("#target"), t = activeTarget();
   if (!t || !state.data){ box.innerHTML = ""; return; }
   const all = state.data.items;
   const here = state.me || origin();
-  const cur = all.find(x => x.id === t.id) || {...t, kind:"", avail:null, total:null};
+  const cur = all.find(x => x.id === t.id) || {...t, avail:null, total:null};
   const it = {...cur, d: haversine(here, cur.pos)};
-  const full = it.avail === 0;
+  const full = it.avail === 0, low = it.avail != null && it.avail <= 3;
   let alts = "";
-  if (full || it.avail == null || it.avail <= 3){
+  if (full || low || it.avail == null){
     const near = all
       .filter(x => x.id !== t.id && x.avail > 0)
       .map(x => ({...x, dt: haversine(t.pos, x.pos), d: haversine(here, x.pos)}))
       .filter(x => x.dt <= 600)
       .sort((a, b) => a.dt - b.dt).slice(0, 2);
-    if (near.length) alts = `<div class="alts"><h4>${full ? "附近還有空位的地方" : "快滿了，附近的備案"}</h4>${near.map(x => lotCard(x, true)).join("")}</div>`;
+    if (near.length) alts = `<div class="alts"><h4>${full ? "附近還有空位的地方" : "附近的備案"}</h4>${near.map(x => lotCard(x, true)).join("")}</div>`;
   }
-  const head = full ? "你要去的車位已經滿了" : it.avail != null && it.avail <= 3 ? "你要去的車位快滿了" : "正在前往";
-  box.innerHTML = `<section class="going${full ? " isfull" : ""}">
-    <div class="ghead">${head}<button type="button" id="btnEndTarget">結束</button></div>
+  const head = full ? "你要去的車位已經滿了" : low ? "你要去的車位快滿了" : "正在前往";
+  box.innerHTML = `<section class="box${full ? " isfull" : ""}">
+    <div class="bhead">${head}<span class="sp"><button type="button" id="btnParkHere">停好了</button><button type="button" id="btnEndTarget">結束</button></span></div>
     ${lotCard(it, true)}${alts}</section>`;
 }
+
+// ---------- 我的車 ----------
+function getParked(){ return store.get("parked"); }
+function parkAt(pos, info){
+  store.set("parked", {pos, at: Date.now(), name: info?.name || "", kind: info?.kind || "", rates: info?.rates || [], fare: info?.fare || info?.rate || ""});
+  store.del("target");
+  render();
+}
+function parkNow(){ // 用目前定位；附近 80 公尺內有路段或停車場就順便記下它的費率
+  const pos = state.me;
+  if (!pos){ return false; }
+  const near = (state.data?.items || []).map(x => ({...x, d: haversine(pos, x.pos)})).filter(x => x.d <= 80).sort((a,b) => a.d - b.d)[0];
+  parkAt(pos, near);
+  return true;
+}
+function carSummary(p){
+  const dur = Date.now() - p.at;
+  const fee = estimateFee(p.rates, dur);
+  const here = state.me;
+  return `<dl class="carinfo">
+      <dt>位置</dt><dd>${esc(p.name || "已記下的位置")}${here ? `（離你 ${fmtDist(haversine(here, p.pos))}）` : ""}</dd>
+      <dt>開始</dt><dd>${fmtClock(p.at)}，已停 ${fmtDuration(dur)}</dd>
+      ${fee ? `<dt>估計</dt><dd><span class="big">約 ${fee.amount} 元</span></dd>` : ""}
+    </dl>
+    ${fee ? `<div class="small">依 ${esc(fee.basis)} 估算，實際以開單為準。</div>` : p.fare ? `<div class="small">收費方式：${esc(p.fare)}</div>` : ""}`;
+}
+function renderParked(){
+  const p = getParked(), box = $("#parked");
+  $("#carDot").hidden = !p;
+  if (carMarker){ carMarker.remove(); carMarker = null; }
+  if (!p){ box.innerHTML = ""; return; }
+  carMarker = L.marker(p.pos, {icon:L.divIcon({className:"", html:`<div class="carpin"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14v-5l-2-5H7l-2 5v5z"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg></div>`, iconSize:[30,30], iconAnchor:[15,15]}), zIndexOffset:950}).addTo(map);
+  box.innerHTML = `<section class="box car">
+    <div class="bhead">我的車<span class="sp"><button type="button" data-unpark>已取車</button></span></div>
+    ${carSummary(p)}
+    <div class="nav"><a class="go" href="${navUrl(p.pos, true)}" target="_blank" rel="noopener">走路導航回車子</a><button type="button" data-showcar>在地圖上看</button></div>
+  </section>`;
+}
+function openCar(){
+  const p = getParked(), body = $("#carBody");
+  if (p){
+    body.innerHTML = `${carSummary(p)}
+      <div class="row"><a class="btn primary" style="text-align:center;text-decoration:none" href="${navUrl(p.pos, true)}" target="_blank" rel="noopener">走路導航回車子</a></div>
+      <div class="row"><button class="btn" type="button" data-unpark>已取車，清除紀錄</button></div>`;
+  } else {
+    body.innerHTML = `<p>停好車後按一下，記住車子在哪裡和開始停車的時間。如果停的是路邊格，會依費率估算目前大概要付多少。</p>
+      ${state.me ? "" : `<p style="color:var(--full)">還沒抓到你的定位，請確認已允許定位。</p>`}
+      <div class="row"><button class="btn primary" type="button" data-parknow ${state.me ? "" : "disabled"}>記住目前位置</button></div>`;
+  }
+  $("#dlgCar").showModal();
+}
+
 function select(id, scroll){
   state.selected = id;
   document.querySelectorAll(".lot").forEach(el => el.classList.toggle("sel", el.dataset.id === id));
   if (scroll) document.getElementById("lot-" + id)?.scrollIntoView({behavior:"smooth", block:"nearest"});
 }
 
+// ---------- 搜尋目的地 ----------
+async function geocode(q){
+  const found = [], debug = {q};
+  const add = (name, pos, sub) => { if (pos && Math.abs(pos[0]) > 0) found.push({name, pos, sub}); };
+  if (!state.demo){
+    const tries = [
+      ["地標", `/api/advanced/V3/Map/GeoCode/Coordinate/Markname/${encodeURIComponent(q)}`],
+      ["地址", `/api/advanced/V3/Map/GeoCode/Coordinate/Address/${encodeURIComponent(/^高雄/.test(q) ? q : "高雄市" + q)}`],
+    ];
+    for (const [label, path] of tries){
+      try{
+        const j = await tdx(path, "format=JSON");
+        const rows = firstArray(j);
+        debug[label] = rows.slice(0, 2);
+        for (const r of rows) add(r.Markname || r.MarkName || r.Address || q, getPos(r), r.Address && r.Markname ? r.Address : label);
+      }catch(e){ debug[label] = e.message; if (e.message === "BADKEY") throw e; }
+      if (found.length) break;
+    }
+  }
+  if (!found.length){ // 備用：OpenStreetMap 的地名搜尋
+    try{
+      const u = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&countrycodes=tw&accept-language=zh-TW&viewbox=120.15,22.95,120.55,22.45&q=${encodeURIComponent(q)}`;
+      const rows = await (await fetch(u)).json();
+      debug.osm = rows.length;
+      for (const r of rows) add(r.name || r.display_name.split(",")[0], [+r.lat, +r.lon], r.display_name.split(",").slice(1, 4).join("，"));
+    }catch(e){ debug.osm = e.message; }
+  }
+  store.set("debug_geo", debug);
+  const ref = state.me || KAOHSIUNG;
+  return found.map(f => ({...f, d: haversine(ref, f.pos)})).sort((a, b) => a.d - b.d).slice(0, 6);
+}
+function showRecents(){
+  const rec = store.get("recent_dest", []);
+  $("#sres").innerHTML = rec.length
+    ? `<div class="hint">最近搜尋</div>` + rec.map((r, i) => `<button type="button" data-rec="${i}"><b>${esc(r.name)}</b><span>${esc(r.sub || "")}</span></button>`).join("")
+    : "";
+}
+function chooseDest(r){
+  const rec = store.get("recent_dest", []).filter(x => x.name !== r.name);
+  rec.unshift({name: r.name, pos: r.pos, sub: r.sub || ""});
+  store.set("recent_dest", rec.slice(0, 5));
+  $("#dlgSearch").close();
+  useCenter(r.pos, `目的地：${r.name}`, true);
+}
+let lastResults = [];
+$("#sform").addEventListener("submit", async e => {
+  e.preventDefault();
+  const q = $("#sq").value.trim(); if (!q) return;
+  const box = $("#sres");
+  box.innerHTML = `<div class="hint">搜尋中…</div>`;
+  try{
+    lastResults = await geocode(q);
+    box.innerHTML = lastResults.length
+      ? lastResults.map((r, i) => `<button type="button" data-res="${i}"><b>${esc(r.name)}</b><span>${esc([r.sub, fmtDist(r.d)].filter(Boolean).join("・"))}</span></button>`).join("")
+      : `<div class="hint">找不到「${esc(q)}」，換個說法試試，例如加上路名或區名。</div>`;
+  }catch(err){
+    box.innerHTML = `<div class="hint">搜尋失敗：${err.message === "BADKEY" ? "TDX 金鑰有問題" : "請確認網路後再試"}。</div>`;
+  }
+});
+$("#sres").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.res != null) chooseDest(lastResults[+b.dataset.res]);
+  else if (b.dataset.rec != null) chooseDest(store.get("recent_dest", [])[+b.dataset.rec]);
+});
+
 // ---------- 事件 ----------
 function onCardsClick(e){
-  const link = e.target.closest(".nav a");
+  const link = e.target.closest("a[data-go]");
   if (link){ // 按導航時記住要去哪一個
     const id = link.closest(".lot")?.dataset.id;
     const it = state.data?.items.find(x => x.id === id);
@@ -569,44 +844,64 @@ function onCardsClick(e){
     return;
   }
   if (e.target.closest("#btnEndTarget")){ store.del("target"); render(); return; }
+  if (e.target.closest("#btnParkHere")){
+    const t = activeTarget(); const it = state.data?.items.find(x => x.id === t?.id) || t;
+    // 有定位而且離目標不遠，就用目前位置（路邊格的點是路段中間，用實際位置比較準）
+    const pos = state.me && haversine(state.me, it.pos) < 300 ? state.me : it.pos;
+    parkAt(pos, it); return;
+  }
+  if (e.target.closest("[data-unpark]")){ store.del("parked"); render(); return; }
+  if (e.target.closest("[data-showcar]")){ const p = getParked(); if (p) moveTo(p.pos, 17); return; }
   const f = e.target.closest(".fare"); if (f){ f.classList.toggle("open"); return; }
   const card = e.target.closest(".lot"); if (!card) return;
   const it = state.data?.items.find(x => x.id === card.dataset.id);
   if (it){ select(it.id); moveTo(it.pos, 17); }
 }
-$("#list").addEventListener("click", onCardsClick);
-$("#target").addEventListener("click", onCardsClick);
+$("main").addEventListener("click", onCardsClick);
 document.querySelectorAll("[data-r]").forEach(b => b.onclick = () => { state.radius = +b.dataset.r; store.set("radius", state.radius); render(); });
 document.querySelectorAll("[data-s]").forEach(b => b.onclick = () => { state.sort = b.dataset.s; store.set("sort", state.sort); render(); });
+document.querySelectorAll("[data-k]").forEach(b => b.onclick = () => { state.kind = b.dataset.k; store.set("kind", state.kind); render(); });
+document.querySelectorAll("[data-nav]").forEach(b => b.onclick = () => { state.navApp = b.dataset.nav; store.set("navApp", state.navApp); render(); });
+$("#chipAvail").onclick = () => { state.onlyAvail = !state.onlyAvail; store.set("onlyAvail", state.onlyAvail); render(); };
 $("#btnRefresh").onclick = refresh;
-$("#btnHere").onclick = () => { if (state.me){ state.center = null; moveTo(state.me, 16); setWhere("以你的位置搜尋"); $("#btnCenter").hidden = true; render(); } else locate(); };
+$("#btnHere").onclick = backToMe;
 $("#btnCenter").onclick = () => { const c = map.getCenter(); $("#btnCenter").hidden = true; useCenter([c.lat, c.lng], "以地圖中心搜尋"); };
+$("#btnSearch").onclick = () => { $("#sq").value = ""; showRecents(); $("#dlgSearch").showModal(); setTimeout(() => $("#sq").focus(), 50); };
+$("#btnCar").onclick = openCar;
+$("#dlgCar").addEventListener("click", e => {
+  if (e.target.closest("[data-parknow]")){ if (parkNow()) $("#dlgCar").close(); return; }
+  if (e.target.closest("[data-unpark]")){ store.del("parked"); $("#dlgCar").close(); render(); }
+});
+
+// 所有對話框：✕、取消、點外面都能關閉
+document.querySelectorAll("dialog").forEach(d => {
+  d.addEventListener("click", e => {
+    if (e.target.closest("[data-close]")){ d.close(); return; }
+    if (e.target !== d) return;
+    const r = d.getBoundingClientRect();
+    if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) d.close();
+  });
+});
 
 const dlg = $("#dlg");
-$("#btnSettings").onclick = () => { const k = store.get("tdx_keys") || {}; $("#cid").value = k.id || ""; $("#csec").value = k.secret || ""; dlg.showModal(); };
+$("#btnSettings").onclick = () => { const k = store.get("tdx_keys") || {}; $("#cid").value = k.id || ""; $("#csec").value = k.secret || ""; render(); dlg.showModal(); };
 $("#frm").addEventListener("submit", e => {
   const id = $("#cid").value.trim(), secret = $("#csec").value.trim();
   if (!id || !secret){ e.preventDefault(); $(id ? "#csec" : "#cid").focus(); return; }
   store.set("tdx_keys", {id, secret}); store.del("tdx_token");
   state.demo = false; state.data = null; refresh();
 });
-$("#btnClose").onclick = $("#btnCancel").onclick = () => dlg.close();
-dlg.addEventListener("click", e => { // 點對話框外面也能關閉
-  if (e.target !== dlg) return;
-  const r = dlg.getBoundingClientRect();
-  if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) dlg.close();
-});
 dlg.addEventListener("close", () => { $("#debugOut").hidden = true; });
-$("#btnDemo").onclick =() => { dlg.close(); state.demo = true; refresh(); };
+$("#btnDemo").onclick = () => { dlg.close(); state.demo = true; refresh(); };
 $("#btnClear").onclick = () => {
-  ["tdx_keys","tdx_token","static_offstreet","static_onstreet","static_rates","debug_rate","static_offstreet_v2","static_onstreet_v2","static_rates_v2","debug_seg"].forEach(store.del);
+  Object.keys(localStorage).filter(k => /^(tdx_|static_|debug_|last_data)/.test(k)).forEach(store.del);
   $("#cid").value = ""; $("#csec").value = ""; state.demo = true; dlg.close(); refresh();
 };
-
 $("#btnDebug").onclick = () => {
-  const d = store.get("debug_rate"), out = $("#debugOut");
-  const seg = store.get("debug_seg");
-  out.textContent = (d || seg) ? "費率表：\n" + JSON.stringify(d, null, 1) + "\n\n路段範例（不含金鑰）：\n" + JSON.stringify(seg, null, 1).slice(0, 2500) : "還沒有抓過資料，先儲存金鑰查詢一次。";
+  const out = $("#debugOut");
+  const parts = [["費率表", store.get("debug_rate")], ["路段範例", store.get("debug_seg")], ["上次搜尋", store.get("debug_geo")]]
+    .filter(([, v]) => v).map(([k, v]) => `${k}：\n${JSON.stringify(v, null, 1).slice(0, 1800)}`);
+  out.textContent = parts.length ? parts.join("\n\n") : "還沒有抓過資料，先儲存金鑰查詢一次。";
   out.hidden = false;
 };
 
@@ -620,12 +915,9 @@ function setBigMap(on){
 $("#btnSize").onclick = () => setBigMap(!document.body.classList.contains("bigmap"));
 setBigMap(store.get("bigmap", false));
 
-// 畫面在前景時每分鐘自動更新
+// 畫面在前景時每分鐘自動更新；從導航 App 切回來時馬上更新
 setInterval(() => { if (document.visibilityState === "visible") refresh(); }, REFRESH_MS);
-document.addEventListener("visibilitychange", () => {
-  // 從導航 App 切回來時馬上更新，讓「正在前往」顯示最新空位
-  if (document.visibilityState === "visible" && !state.demo) refresh();
-});
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
 
 render();
 locate();
