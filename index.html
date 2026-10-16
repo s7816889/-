@@ -81,6 +81,8 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;
 .meta .dist{font:600 15px/1.35 var(--font-num);color:var(--fg);font-variant-numeric:tabular-nums}
 .tag{font-size:11px;border:1px solid var(--line);border-radius:5px;padding:0 5px}
 .rate{font-size:13.5px;font-weight:500;margin-top:4px}
+.warnline{font-size:12px;color:var(--warn);margin-top:4px}
+.navpin{width:14px;height:14px;border-radius:50%;background:#ff6a00;border:3px solid #fff;box-shadow:0 0 0 2px #ff6a00}
 .fare{font-size:12.5px;color:var(--muted);margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:pointer}
 .fare.open{-webkit-line-clamp:unset}
 .nav{display:flex;gap:8px;margin-top:8px}
@@ -251,7 +253,7 @@ dialog input{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
     </section>
     <section>
       <h3>資料檢查</h3>
-      <p>費率或搜尋結果怪怪的時候，按下面的按鈕，把出現的內容截圖給 Claude。內容只有停車資料，不含金鑰。</p>
+      <p>位置、費率或搜尋結果怪怪的時候，先點那一筆車位，再按下面的按鈕，把出現的內容截圖給 Claude。內容只有停車資料，不含金鑰。</p>
       <div class="row"><button class="btn" type="button" id="btnDebug">顯示原始資料</button></div>
       <pre id="debugOut" hidden></pre>
     </section>
@@ -261,7 +263,7 @@ dialog input{width:100%;padding:10px 12px;border:1px solid var(--line);border-ra
         <button class="btn" type="button" id="btnDemo">切換到示範資料</button>
         <button class="btn" type="button" id="btnClear">清除金鑰與快取</button>
       </div>
-      <p class="ver">版本 6.2・2026/10/15</p>
+      <p class="ver">版本 6.3・2026/10/16</p>
     </section>
   </form>
 </dialog>
@@ -382,7 +384,7 @@ async function tdx(path, fmt = "%24format=JSON"){
 }
 // 停車場、路段基本資料一天抓一次就好
 async function getStatic(kind, path){
-  const key = `static_${kind}_v4`, today = new Date().toDateString();
+  const key = `static_${kind}_v5`, today = new Date().toDateString();
   const c = store.get(key);
   if (c && c.day === today) return c.items;
   const rows = firstArray(await tdx(path));
@@ -390,10 +392,12 @@ async function getStatic(kind, path){
   const items = rows.map(o => {
     const parts = kind === "onstreet" ? parseParts(o) : null;
     const pos = getPos(o);
+    // 代表點離路段範圍超過 60 公尺，就標記「位置可能不準」
+    const off = parts && pos ? Math.round(haversine(pos, nearestOn(parts, pos))) : 0;
     return pos && {
       id: o.CarParkID || o.ParkingSegmentID,
       name: zh(o.CarParkName) || zh(o.ParkingSegmentName),
-      pos, parts, addr: zh(o.Address),
+      pos, parts, off, addr: zh(o.Address),
       fare: zh(o.FareDescription) || "",
       rateIds: collectRateIds(o),
     };
@@ -707,6 +711,7 @@ function lotCard(it, compact){
       <h3>${esc(it.name)}</h3>
       <div class="meta">${it.d!=null?`<span class="dist">${fmtDist(it.d)}</span>`:""}<span class="tag">${esc(it.kind)}</span>${it.t?`<span>${ago(it.t)}</span>`:""}${!compact&&it.addr?`<span>${esc(it.addr)}</span>`:""}</div>
       ${it.rate?`<div class="rate">${esc(it.rate)}</div>`:""}
+      ${!it.parts && it.kind === "路邊" ? `<div class="warnline">TDX 沒有提供這個路段的範圍，導航位置可能不準</div>` : it.off > 60 ? `<div class="warnline">這個路段的資料位置有落差，請以現場為準</div>` : ""}
       ${!compact&&it.fare?`<div class="fare">${esc(it.fare)}</div>`:""}
       <div class="nav"><a class="go" data-go href="${navUrl(it.spot || it.pos)}" target="_blank" rel="noopener">導航</a></div>
     </div></article>`;
@@ -808,10 +813,20 @@ function openCar(){
   $("#dlgCar").showModal();
 }
 
-let segLine = null;
+let segLine = null, navPin = null;
 function highlight(it){
   if (segLine){ segLine.remove(); segLine = null; }
-  if (it?.parts) segLine = L.polyline(it.parts, {color:"#ff6a00", weight:7, opacity:.85}).addTo(map);
+  if (navPin){ navPin.remove(); navPin = null; }
+  if (!it) return;
+  const spot = spotFor(it, origin());
+  if (it.parts) segLine = L.polyline(it.parts, {color:"#ff6a00", weight:7, opacity:.85, interactive:false}).addTo(map);
+  navPin = L.marker(spot, {icon:L.divIcon({className:"", html:'<div class="navpin"></div>', iconSize:[14,14]}), interactive:false, zIndexOffset:1100}).addTo(map);
+  store.set("debug_pick", {
+    名稱: it.name, 類型: it.kind, 編號: it.id,
+    TDX代表點: it.pos, 導航目的地: spot.map(n => +n.toFixed(5)),
+    代表點離路段: it.off != null ? it.off + " m" : "—",
+    路段範圍: it.parts ? it.parts.map(p => p.length + " 個點：" + JSON.stringify([p[0], p[p.length-1]])) : "TDX 沒提供",
+  });
 }
 function select(id, scroll){
   state.selected = id;
@@ -906,7 +921,11 @@ function onCardsClick(e){
   const f = e.target.closest(".fare"); if (f){ f.classList.toggle("open"); return; }
   const card = e.target.closest(".lot"); if (!card) return;
   const it = state.data?.items.find(x => x.id === card.dataset.id);
-  if (it){ select(it.id); highlight(it); moveTo(spotFor(it, origin()), 17); }
+  if (it){
+    select(it.id); highlight(it);
+    if (it.parts){ programmatic = true; map.fitBounds(L.latLngBounds(it.parts.flat()).extend(spotFor(it, origin())), {padding:[30,30], maxZoom:18}); }
+    else moveTo(it.pos, 17);
+  }
 }
 $("main").addEventListener("click", onCardsClick);
 document.querySelectorAll("[data-r]").forEach(b => b.onclick = () => { state.radius = +b.dataset.r; store.set("radius", state.radius); render(); });
@@ -950,7 +969,7 @@ $("#btnClear").onclick = () => {
 };
 $("#btnDebug").onclick = () => {
   const out = $("#debugOut");
-  const parts = [["費率表", store.get("debug_rate")], ["路段範例", store.get("debug_seg")], ["上次搜尋", store.get("debug_geo")]]
+  const parts = [["最後點選的車位", store.get("debug_pick")], ["費率表", store.get("debug_rate")], ["路段範例", store.get("debug_seg")], ["上次搜尋", store.get("debug_geo")]]
     .filter(([, v]) => v).map(([k, v]) => `${k}：\n${JSON.stringify(v, null, 1).slice(0, 1800)}`);
   out.textContent = parts.length ? parts.join("\n\n") : "還沒有抓過資料，先儲存金鑰查詢一次。";
   out.hidden = false;
